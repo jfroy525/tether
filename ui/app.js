@@ -740,7 +740,7 @@ async function peekPage(body, r, sid) {
   if (peek.path !== r.path) return;
   const html = await fillLibs(v.html || "");
   if (peek.path !== r.path) return;
-  const f = el("iframe", "peek-page"); f.setAttribute("sandbox", "allow-scripts"); f.srcdoc = html;
+  const f = el("iframe", "peek-page"); f.setAttribute("sandbox", "allow-scripts"); f.srcdoc = html + HASH_JS;
   body.innerHTML = ""; body.appendChild(f);
 }
 function peekCode(box, body, r, a, b) {
@@ -879,7 +879,7 @@ async function renderView(S, body, refresh) {
     const [sx, sy] = viewShown.scroll;
     const html = await fillLibs(r.html);
     if (state.tab !== "view" || state.active !== S.sid || S.viewSel !== it.path) return;
-    f.srcdoc = html + NOTE_JS + `<script>addEventListener("load",()=>scrollTo(${sx},${sy}));addEventListener("scroll",()=>parent.postMessage({tetherScroll:[scrollX,scrollY]},"*"),{passive:true});<\/script>`;
+    f.srcdoc = html + HASH_JS + NOTE_JS + `<script>addEventListener("load",()=>scrollTo(${sx},${sy}));addEventListener("scroll",()=>parent.postMessage({tetherScroll:[scrollX,scrollY]},"*"),{passive:true});<\/script>`;
     frame.appendChild(f); frame.classList.add("page");
   } else if (r.type === "image") {
     const im = el("img"); im.src = r.src; im.onclick = () => S.commenting || frame.classList.toggle("actual"); im.title = "Click for actual size";
@@ -1116,6 +1116,8 @@ function redrawDiagrams() {
 // Pages and pictures get numbered pins and Claude gets a picture of them; code takes a note on a line, Markdown on
 // the paragraph. On a page Tether also records the part under the pin (its tag, class and text), so Claude can find
 // it in the code. The script below runs inside the sealed page; it only reports clicks and draws the pins.
+// A sealed page's base address is Tether's own, so a "#section" link would load Tether into the frame; scroll instead.
+const HASH_JS = `<script>addEventListener("click",e=>{const a=e.target.closest&&e.target.closest('a[href^="#"]');if(!a||e.defaultPrevented)return;e.preventDefault();const id=decodeURIComponent(a.getAttribute("href").slice(1));const t=id?document.getElementById(id)||document.getElementsByName(id)[0]:document.body;t&&t.scrollIntoView({behavior:"smooth",block:"start"});});<\/script>`;
 const NOTE_JS = `<script>(()=>{let on=false,pins=[],L=null,color="#0B6E86";
 const st=document.createElement("style");st.textContent="html.tether-c,html.tether-c *{cursor:crosshair!important}";
 const draw=()=>{if(!L){L=document.createElement("div");L.style.cssText="position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647";document.documentElement.appendChild(L);}

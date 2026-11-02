@@ -84,6 +84,14 @@ h1 { font-size: 40px; line-height: 1.12; }
   text-decoration: none; border: 1px solid var(--line-2); color: var(--text); background: var(--surface); cursor: pointer; }
 .btn.primary { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
 .btn + .btn { margin-left: 8px; }
+.install { margin: 0 0 24px; max-width: 34em; }
+.install .lbl { font-size: 12px; color: var(--text-3); margin-bottom: 6px; }
+.install .box { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line-2); background: var(--surface); border-radius: var(--r-2); padding: 9px 9px 9px 12px; }
+.install code { flex: 1; min-width: 0; font: 12px/1.6 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.install .copy { flex: none; height: 26px; padding: 0 10px; border-radius: var(--r-1); border: 1px solid var(--line-2); background: transparent; color: var(--text-2); font: 500 12px var(--font); cursor: pointer; }
+.install .copy:hover { color: var(--text); }
+.install .need { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.install .need a { color: var(--text-2); text-underline-offset: 2px; text-decoration-color: var(--line-2); }
 .facts { display: flex; gap: 28px; margin-top: 30px; }
 .facts div { font-size: 12px; color: var(--text-3); }
 .facts b { display: block; font-size: 22px; font-weight: 600; color: var(--text); }
@@ -219,10 +227,15 @@ footer { text-align: center; color: var(--text-3); font-size: 12px; margin-top: 
     <div>
       <h1>Claude Code, without the terminal.</h1>
       <p class="lead">Tether is a calm Mac window around Claude Code. You talk, point and click. Claude does the work, and everything it touches is one click away.</p>
+      <div class="install">
+        <div class="lbl">Install: paste this in Terminal</div>
+        <div class="box"><code id="cmd">git clone https://github.com/jfroy525/tether.git ~/tether &amp;&amp; cd ~/tether &amp;&amp; zsh build_app.sh &amp;&amp; open ~/Applications/Tether.app</code><button class="copy" id="copy">Copy</button></div>
+        <div class="need">Needs <a href="https://claude.com/claude-code">Claude Code</a>, logged in, and Python 3.11 or newer</div>
+      </div>
       <a class="btn primary" href="#show">See what's in it</a><a class="btn" href="#keys">Shortcuts</a>
       <div class="facts">
         <div><b>Same Claude</b>Your Claude Code, settings and tools</div>
-        <div><b>No setup</b>Open a folder and start</div>
+        <div><b>No new account</b>Uses your Claude Code login</div>
         <div><b>Mac</b>Glass window, light and dark</div>
       </div>
     </div>
@@ -615,6 +628,18 @@ footer { text-align: center; color: var(--text-3); font-size: 12px; margin-top: 
 </div>
 
 <script>
+// "#section" links scroll here; some viewers (Tether's Shelf, GitHub previews) would otherwise load another page
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="#"]'); if (!a) return;
+  const t = document.getElementById(a.getAttribute("href").slice(1)); if (!t) return;
+  e.preventDefault(); t.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("copy").onclick = async e => {
+  const t = document.getElementById("cmd").textContent;
+  try { await navigator.clipboard.writeText(t); }
+  catch { const r = document.createRange(); r.selectNodeContents(document.getElementById("cmd")); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand("copy"); }
+  e.target.textContent = "Copied"; setTimeout(() => e.target.textContent = "Copy", 1500);
+};
 const b = document.body, k = "tether-features-theme";
 let saved = null; try { saved = localStorage.getItem(k); } catch (e) {}
 if (saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches) b.classList.add("dark");
