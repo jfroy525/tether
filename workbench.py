@@ -32,6 +32,7 @@ import notes
 import recall
 import slim
 import repos
+import updater
 import screen
 import voice
 from hotkey import HOTKEYS, SpeakKey
@@ -1584,6 +1585,42 @@ class Api:
             if self._window:
                 self._window.show()
         AppHelper.callAfter(front)
+
+    # ---------- updates from GitHub ----------
+    def update_status(self, force=False):
+        return updater.status(bool(force))
+
+    def update_busy(self):
+        """Chats a restart would cut off: Claude replying or waiting on you, or a background job still going."""
+        return sum(1 for s in list(self._sessions.values())
+                   if s.status in ("running", "waiting", "starting") or s.busy_work())
+
+    def update_now(self, chats=None, active=""):
+        n = self.update_busy()
+        if n:
+            return {"busy": n}
+        r = updater.apply()
+        if r.get("error"):
+            return r
+        (SUPPORT / "reopen.json").write_text(json.dumps({"chats": chats or [], "active": active or ""}))
+        updater.relaunch(r.get("rebuild", False))
+
+        def quit_():
+            try:
+                self._window.destroy()
+            finally:
+                threading.Timer(10, os._exit, (0,)).start()  # in case a window hangs on
+        threading.Timer(0.4, quit_).start()
+        return {"ok": True}
+
+    def take_reopen(self):
+        """The chats that were open before an update restarted Tether, once."""
+        f = SUPPORT / "reopen.json"
+        try:
+            d = json.loads(f.read_text()); f.unlink()
+            return d
+        except (OSError, ValueError):
+            return {}
 
     def _shutdown(self) -> None:
         for s in self._sessions.values():

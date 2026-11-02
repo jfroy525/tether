@@ -1,0 +1,92 @@
+"""Tether updates itself from GitHub. A fetch every few hours says whether main has moved on; one click
+fast-forwards this folder, installs new packages if requirements.txt changed, and restarts the app."""
+from __future__ import annotations
+
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import repos
+
+HERE = Path(__file__).resolve().parent
+EVERY = 6 * 3600  # GitHub is asked at most this often, unless you check by hand
+_last: dict = {"at": 0.0, "res": None}
+
+
+def _git(*args: str, timeout: float = 30) -> tuple[int, str]:
+    return repos._run(["git", *args], str(HERE), timeout)
+
+
+def status(force: bool = False) -> dict:
+    """{behind, ahead, dirty, changes}: commits on GitHub's main not here yet, and whether this copy can take them."""
+    if not (HERE / ".git").exists():
+        return {"ok": False, "why": "This copy of Tether wasn't installed with git, so it can't update itself."}
+    if not force and _last["res"] and time.time() - _last["at"] < EVERY:
+        return _last["res"]
+    code, _ = _git("fetch", "--quiet", "origin", "main", timeout=45)
+    if code:
+        return _last["res"] or {"ok": False, "why": "Couldn't reach GitHub."}
+    n = lambda rng: int((_git("rev-list", "--count", rng)[1].strip() or "0"))  # noqa: E731
+    behind, ahead = n("HEAD..origin/main"), n("origin/main..HEAD")
+    dirty = bool(_git("status", "--porcelain", "--untracked-files=no")[1].strip())
+    log = _git("log", "--format=%s", "HEAD..origin/main")[1].splitlines() if behind else []
+    res = {"ok": True, "behind": behind, "ahead": ahead, "dirty": dirty, "changes": log[:12], "more": max(0, len(log) - 12)}
+    _last.update(at=time.time(), res=res)
+    return res
+
+
+def _packages() -> bool:
+    """Install what requirements.txt now lists into this folder's .venv (uv if it's there, else pip)."""
+    py = HERE / ".venv" / "bin" / "python"
+    py = str(py) if py.exists() else sys.executable
+    req = str(HERE / "requirements.txt")
+    env = {**os.environ, "PATH": f"{Path.home() / '.local/bin'}:{repos.ENV_PATH}"}
+    uv = shutil.which("uv", path=env["PATH"])
+
+    def run(*args: str) -> int:
+        try:
+            return subprocess.run(args, cwd=HERE, env=env, capture_output=True, timeout=900).returncode
+        except (OSError, subprocess.TimeoutExpired):
+            return 1
+    if uv and run(uv, "pip", "install", "-q", "--python", py, "-r", req) == 0:
+        return True
+    run(py, "-m", "ensurepip", "-q")  # a venv made by uv has no pip of its own
+    return run(py, "-m", "pip", "install", "-q", "-r", req) == 0
+
+
+def apply() -> dict:
+    """Fast-forward to GitHub's main. Nothing changes unless every step works; local edits are never touched."""
+    s = status(force=True)
+    if not s.get("ok"):
+        return {"error": s.get("why") or "Couldn't check for updates."}
+    if not s.get("behind"):
+        return {"error": "Tether is already up to date."}
+    if s.get("dirty") or s.get("ahead"):
+        return {"error": "Tether's own files were changed on this Mac, so it can't update by itself."}
+    old = _git("rev-parse", "HEAD")[1].strip()
+    files = _git("diff", "--name-only", "HEAD", "origin/main")[1].split()
+    if _git("merge", "--ff-only", "--quiet", "origin/main")[0]:
+        return {"error": "Couldn't apply the update. Nothing was changed."}
+    if "requirements.txt" in files and not _packages():
+        _git("reset", "--keep", old)
+        return {"error": "Couldn't install the new packages, so Tether stayed on the version you had."}
+    _last["res"] = None
+    return {"ok": True, "rebuild": "build_app.sh" in files}
+
+
+def relaunch(rebuild: bool = False) -> None:
+    """Once this process has quit, open Tether again (rebuilding the app first if the build script changed)."""
+    app = os.environ.get("TETHER_APP") or str(Path.home() / "Applications" / "Tether.app")
+    q = shlex.quote
+    if Path(app).is_dir():
+        build = f"APP_PATH={q(app)} zsh {q(str(HERE / 'build_app.sh'))} >/dev/null 2>&1; " if rebuild else ""
+        start = f"{build}open {q(app)}"
+    else:  # started from Terminal: start it the same way
+        start = f"cd {q(str(HERE))} && nohup {q(sys.executable)} {q(str(HERE / 'workbench.py'))} >/dev/null 2>&1 &"
+    script = f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.3; done; sleep 0.5; {start}"
+    subprocess.Popen(["/bin/zsh", "-c", script], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

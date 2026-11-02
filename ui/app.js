@@ -3209,6 +3209,55 @@ function wire() {
   setInterval(() => { if (document.hasFocus()) loadHistory(); }, 120000);
 }
 
+// ---------- updates: a glowing icon in the sidebar when GitHub has a newer Tether ----------
+const upd = { info: null, waiting: false, timer: 0 };
+async function checkUpdate(force = false) {
+  const r = await api().update_status(force).catch(() => null);
+  if (r && r.ok) upd.info = r;
+  const b = $("#update-btn");
+  b.hidden = !(upd.info?.behind > 0);
+  b.classList.toggle("wait", upd.waiting);
+  b.title = b.ariaLabel = upd.waiting ? "Updating when chats finish" : "Update available";
+}
+function updateDialog() {
+  const i = upd.info || {};
+  const list = (i.changes || []).map(c => `<li>${esc(c)}</li>`).join("") + (i.more ? `<li>and ${i.more} more</li>` : "");
+  if (i.dirty || i.ahead) {
+    const box = openModal(`<h2>Update Tether</h2><p class="modal-p">Tether's own files were changed on this Mac, so it can't update by itself.</p>
+      <div class="modal-acts"><button class="btn primary" data-k="ok">OK</button></div>`);
+    box.querySelector("[data-k]").onclick = closeModal;
+    return;
+  }
+  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.</p>
+    <div class="modal-acts"><button class="btn ghost" data-k="no">${upd.waiting ? "Don't update" : "Cancel"}</button><button class="btn primary" data-k="yes" id="upd-go">Update and restart</button></div>`);
+  api().update_busy().then(n => {
+    if (!n) return;
+    $("#upd-p").textContent = `${n === 1 ? "A chat is" : n + " chats are"} still working. Tether updates when ${n === 1 ? "it finishes" : "they finish"}, then restarts. Open chats come back.`;
+    $("#upd-go").textContent = upd.waiting ? "Keep waiting" : `Update when ${n === 1 ? "it finishes" : "they finish"}`;
+  });
+  box.querySelector('[data-k="no"]').onclick = () => { if (upd.waiting) stopWaiting(); closeModal(); };
+  box.querySelector('[data-k="yes"]').onclick = () => { closeModal(); runUpdate(); };
+}
+function stopWaiting() { upd.waiting = false; clearTimeout(upd.timer); checkUpdate(); }
+async function runUpdate() {
+  const chats = [...state.open.values()].filter(S => S.status !== "new").map(S => ({ sid: S.sid, cwd: S.cwd, title: S.title || "" }));
+  const r = await api().update_now(chats, state.active || "");
+  if (r.busy) {  // try again until every chat is done
+    upd.waiting = true; checkUpdate();
+    clearTimeout(upd.timer); upd.timer = setTimeout(() => upd.waiting && runUpdate(), 3000);
+    return;
+  }
+  upd.waiting = false;
+  if (r.error) { checkUpdate(true); return toast(r.error, "error"); }
+  toast("Updating Tether…");
+}
+async function reopenAfterUpdate() {
+  const r = await api().take_reopen();
+  for (const c of r.chats || []) await openSession(c.sid, c.cwd, c.title).catch(() => {});
+  if (r.active && state.open.has(r.active)) activate(r.active);
+  if (r.chats?.length) renderSidebar();
+}
+
 window.addEventListener("pywebviewready", async () => {
   const r = await api().ready();
   state.settings = r.settings; state.hotkeys = r.hotkeys; state.home = r.home;
@@ -3219,5 +3268,9 @@ window.addEventListener("pywebviewready", async () => {
   showKeys();
   await loadHistory();
   fillModels();
+  reopenAfterUpdate();
+  $("#update-btn").onclick = updateDialog;
+  setTimeout(checkUpdate, 15000);  // GitHub is asked at most every 6 hours; this only reads the answer
+  setInterval(checkUpdate, 3600 * 1000);
 });
 document.addEventListener("mousedown", e => { const p = $("#jobs-pop"); if (p && !p.hidden && !e.target.closest("#jobs-wrap")) p.hidden = true; });

@@ -252,6 +252,13 @@ body:not(.dark) .seg .thumb { background: #fff; }
 .side-foot { border-top: 1px solid var(--line); padding: 8px 10px; display: flex; align-items: center; gap: 4px; }
 .side-foot .icb { width: 28px; height: 28px; }
 #keys-hint { display: none; }
+.icb.upd { color: var(--accent); }
+.icb.upd svg.i { stroke-width: 1.9; }
+.icb.upd svg { animation: upd-glow 2.4s ease-in-out infinite; }
+.icb.upd.wait svg { animation: none; opacity: .55; }
+@keyframes upd-glow { 0%, 100% { filter: drop-shadow(0 0 2px var(--accent)); } 50% { filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 10px var(--accent)) drop-shadow(0 0 16px var(--accent)); } }
+@media (prefers-reduced-motion: reduce) { .icb.upd svg { animation: none; filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 10px var(--accent)); } }
+.upd-list { margin: 4px 0 14px; padding-left: 18px; font-size: var(--fs-ctl); color: var(--text-2); line-height: 1.55; max-height: 220px; overflow: auto; }
 
 /* ---------- header ---------- */
 #main { margin: 8px; border-radius: var(--r-pane); display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; overflow: hidden; }  /* floats like the sidebar and panel */

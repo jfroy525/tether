@@ -21,7 +21,9 @@ zsh build_app.sh
 open ~/Applications/Tether.app
 ```
 
-The build makes `~/Applications/Tether.app`, which runs the code in this folder. If you move the folder, run `zsh build_app.sh` again. To update, `git pull`, quit Tether (⌘Q) and reopen it.
+The build makes `~/Applications/Tether.app`, which runs the code in this folder. If you move the folder, run `zsh build_app.sh` again.
+
+**Updates:** when a newer Tether is on GitHub, a glowing download icon appears next to the settings gear. Click it to see what changed, then **Update and restart**. If Claude is working in any chat, Tether waits until it's done, and the chats you had open come back after the restart. If you installed before the update icon existed, update once by hand: `cd ~/tether && git pull`, then quit Tether (⌘Q) and reopen it.
 
 The first time you use each of these, macOS asks for permission (System Settings › Privacy & Security):
 - **Microphone:** dictation. Speech is turned into text on your Mac with Whisper; the speech model (about 150 MB) downloads the first time.
@@ -76,6 +78,7 @@ Settings (⌘,) holds the hotkeys, mic, speech model, work words for dictation, 
 - `history.py`: past sessions from ~/.claude/projects · `repos.py`: git, gh and (if you use it) Databricks status and repo discovery
 - `voice.py`: dictation · `screen.py`, `markup.html`: screenshots and marks
 - `recall.py`: the per-session search index and the Haiku lookup · `notes.py`: running notes · `slim.py`: removes old screenshots from transcripts
+- `updater.py`: checks GitHub for a newer Tether (at most every 6 hours), updates this folder and restarts
 - `wb_mcp.py`: tools for Claude (look_at_screen, list_windows, mark_up_screen, show_table, show_artifact, recall, session_notes)
 - `artifacts.py`: the Shelf's versions and which chat showed each (in the support folder, never the project), sealed pages, changed lines · `artifact_snap.py`: draws a page off screen for Claude to look at
 - `ui/`: the page (`app.js`, `markdown.js`, `runner.js` and `critters.js` for the working-line animations, `app.css` for the Float glass layout) · `make_icon.py`: the Tether icon

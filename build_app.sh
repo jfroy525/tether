@@ -43,6 +43,7 @@ PLIST
 cat > "$APP/Contents/MacOS/Tether" <<LAUNCH
 #!/bin/zsh
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$HOME/.local/bin:\$PATH"
+export TETHER_APP="$APP"
 cd "$DIR"
 exec "$DIR/.venv/bin/python" "$DIR/workbench.py" 2>>"\$HOME/Library/Logs/Tether.log"
 LAUNCH
