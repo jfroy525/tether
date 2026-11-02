@@ -1802,6 +1802,7 @@ function rename(row, s) {
 
 function sessionMenu(s, anchor, x, y) {
   const m = $("#ctx-menu");
+  m.classList.remove("mini-menu");
   m.style.width = "";
   const S = state.open.get(s.id);
   const items = [
@@ -1837,6 +1838,7 @@ function sessionMenu(s, anchor, x, y) {
 // A chat that worked in more than one repo: pick which one the tabs and top bar show. Saved per chat.
 function repoMenu(S, anchor) {
   const m = $("#ctx-menu");
+  m.classList.remove("mini-menu");
   m.innerHTML = "";
   m.style.width = "380px";
   for (const r of S.repos) {
@@ -2377,12 +2379,13 @@ function renderBar() {
   title.title = "Rename";
   title.onclick = () => renameThread(S, title);
   if (document.body.classList.contains("mini")) {
-    const row = el("div", "mini-title");
+    // The whole title is the chat switcher here; rename in the full window
+    const row = el("button", "mini-title");
+    title.onclick = null; title.title = "";
+    row.title = "Switch chat";
     row.appendChild(title);
-    const pick = el("button", "mini-pick", "▾");
-    pick.title = "Switch chat";
-    pick.onclick = e => { e.stopPropagation(); miniMenu(pick); };
-    row.appendChild(pick);
+    row.appendChild(el("span", "mini-pick", "▾"));
+    row.onclick = e => { e.stopPropagation(); $("#ctx-menu").hidden || !$("#ctx-menu").classList.contains("mini-menu") ? miniMenu(row) : ($("#ctx-menu").hidden = true); };
     left.appendChild(row);
     return;
   }
@@ -2467,25 +2470,72 @@ function renderMiniBar() {
   p.title = top ? "Stays above other apps · click to let them cover it" : "Keep above other apps";
 }
 function miniMenu(anchor) {
+  // Pinned, open and recent chats, with a search over all of them. Arrows and Enter work from the search box.
   const m = $("#ctx-menu");
   m.innerHTML = "";
-  m.style.width = Math.min(280, innerWidth - 16) + "px";
-  const list = [...state.open.values()].sort((a, b) => b.lastActive - a.lastActive);
-  for (const S of list) {
-    const st = liveStatus(S);
-    const row = el("div", "it mini-it" + (S.sid === state.active ? " sel" : ""), `<span class="dot ${st}"></span><span class="a"></span><span class="b">${STATUS_WORDS[st] || ""}</span>`);
-    row.querySelector(".a").textContent = S.title || "New session";
-    row.onclick = e => { e.stopPropagation(); m.hidden = true; openSession(S.sid, S.cwd, S.title); };
-    m.appendChild(row);
-  }
-  m.appendChild(el("div", "sep"));
-  const nw = el("div", "it", `<span class="a">New session</span><span class="b mini-k">⌘N</span>`);
-  nw.onclick = e => { e.stopPropagation(); m.hidden = true; newSessionDialog(); };
-  m.appendChild(nw);
+  m.classList.add("mini-menu");
+  m.style.width = Math.min(300, innerWidth - 16) + "px";
+  const q = el("input", "mini-q");
+  q.placeholder = "Search chats"; q.spellcheck = false;
+  const res = el("div", "mini-res");
+  m.appendChild(q); m.appendChild(res);
+  const all = (state.sessions || []).filter(s => !s.archived), byId = new Map((state.sessions || []).map(s => [s.id, s]));
+  const live = [...state.open.values()].sort((a, b) => b.lastActive - a.lastActive)
+    .map(S => byId.get(S.sid) || { id: S.sid, cwd: S.cwd, title: S.title, group: basename(S.cwd), mtime: S.lastActive });
+  const order = state.pinOrder || [];
+  const pinned = all.filter(s => s.pinned).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const pinnedIds = new Set(pinned.map(s => s.id));
+  const openOnly = live.filter(s => !pinnedIds.has(s.id));
+  const recent = all.filter(s => !pinnedIds.has(s.id) && !state.open.has(s.id) && !s.scratch).sort((a, b) => b.mtime - a.mtime).slice(0, 6);
+  let rows = [], sel = 0;
+  const row = s => {
+    const S = state.open.get(s.id), st = S ? liveStatus(S) : "saved";
+    const r = el("div", "it mini-it" + (s.id === state.active ? " cur" : ""),
+      `${s.pinned ? `<span class="pin-mark ${S ? "live " + st : "closed"}">★</span>` : `<span class="dot ${st}"></span>`}<span class="a"></span><span class="b"></span>`);
+    r.querySelector(".a").textContent = (S && !s.renamed && S.title) || s.title || "New session";
+    r.querySelector(".b").textContent = S && STATUS_WORDS[st] ? STATUS_WORDS[st] : s.group || basename(s.cwd);
+    r.title = tilde(s.cwd);
+    r.onclick = e => { e.stopPropagation(); go(s); };
+    r.onmousemove = () => mark(rows.indexOf(r));
+    rows.push(r); res.appendChild(r);
+  };
+  const go = s => { m.hidden = true; if (s.id !== state.active) openSession(s.id, s.cwd, s.title); };
+  const head = t => res.appendChild(el("div", "hd", esc(t)));
+  const mark = i => { sel = Math.max(0, Math.min(i, rows.length - 1)); rows.forEach((r, j) => r.classList.toggle("sel", j === sel)); rows[sel]?.scrollIntoView({ block: "nearest" }); };
+  const draw = () => {
+    res.innerHTML = ""; rows = [];
+    const t = q.value.trim().toLowerCase();
+    if (t) {
+      const hit = s => `${s.title} ${s.cwd} ${s.group || ""} ${s.branch || ""}`.toLowerCase().includes(t);
+      const hits = [...live.filter(s => !byId.has(s.id)), ...all].filter(hit).slice(0, 12);
+      hits.forEach(row);
+      if (!hits.length) res.appendChild(el("div", "side-empty", "No chats match."));
+    } else {
+      if (pinned.length) { head("Pinned"); pinned.forEach(row); }
+      if (openOnly.length) { head("Open"); openOnly.forEach(row); }
+      if (recent.length) { head("Recent"); recent.forEach(row); }
+    }
+    res.appendChild(el("div", "sep"));
+    const nw = el("div", "it mini-it", `<span class="new-plus">+</span><span class="a">New session</span><span class="b mini-k">⌘N</span>`);
+    nw.onclick = e => { e.stopPropagation(); m.hidden = true; newSessionDialog(); };
+    nw.onmousemove = () => mark(rows.indexOf(nw));
+    rows.push(nw); res.appendChild(nw);
+    mark(t ? 0 : Math.max(0, rows.findIndex(r => !r.classList.contains("cur"))));
+  };
+  q.oninput = draw;
+  q.onclick = e => e.stopPropagation();
+  q.onkeydown = e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); mark(sel + (e.key === "ArrowDown" ? 1 : -1)); }
+    else if (e.key === "Enter") { e.preventDefault(); rows[sel]?.click(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); m.hidden = true; $("#input").focus(); }
+  };
+  draw();
   m.hidden = false;
   const a = anchor.getBoundingClientRect();
-  m.style.left = Math.max(8, Math.min(a.left - 40, innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.left = Math.max(8, Math.min(a.left, innerWidth - m.offsetWidth - 8)) + "px";
   m.style.top = a.bottom + 6 + "px";
+  res.style.maxHeight = Math.max(160, innerHeight - a.bottom - 70) + "px";
+  q.focus();
 }
 function renameThread(S, node) {
   const input = el("input", "thread-title-edit");

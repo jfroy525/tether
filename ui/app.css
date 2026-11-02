@@ -965,9 +965,22 @@ body.mini .chat-inner { padding-left: 14px; padding-right: 14px; }
 body.mini #composer { padding: 0 10px 10px; }
 body.mini #tools-wrap, body.mini #fast-btn { display: none; }
 #mini-pin.off { color: var(--text-3); opacity: .6; }
-.mini-title { display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 100%; }
-.mini-pick { border: 0; background: transparent; color: var(--text-3); font-size: 11px; padding: 3px 6px; border-radius: 6px; cursor: pointer; flex: none; }
-.mini-pick:hover { background: var(--hover); color: var(--text); }
+/* shifted with left, not a negative margin: the margin came off the title's width and cut short names */
+.mini-title { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; border: 0; background: transparent; color: inherit; font: inherit;
+  padding: 3px 8px; position: relative; left: -8px; border-radius: 8px; cursor: pointer; text-align: left; }
+.mini-title:hover { background: var(--hover); }
+.mini-title .thread-title { cursor: pointer; min-width: 0; max-width: none; padding: 0; margin: 0; }
+.mini-title .thread-title:hover { background: none; }
+.mini-pick { color: var(--text-3); font-size: 11px; flex: none; }
+.mini-title:hover .mini-pick { color: var(--text); }
+.popup.mini-menu { padding-top: 6px; }
+.mini-q { width: 100%; box-sizing: border-box; border: 1px solid var(--line); background: transparent; color: var(--text); font: inherit;
+  padding: 6px 10px; border-radius: var(--r-2); outline: none; margin-bottom: 4px; }
+.mini-q:focus { border-color: var(--accent); }
+.mini-res { overflow-y: auto; }
+.popup .it.mini-it.cur .a { font-weight: 600; }
+.popup .it.mini-it .pin-mark { flex: none; }
+.popup .it.mini-it .new-plus { width: 9px; flex: none; text-align: center; color: var(--text-3); font-size: 13px; line-height: 1; }
 .popup .it.mini-it { align-items: center; }
 .popup .it.mini-it .a { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup .it.mini-it .b, .popup .it .mini-k { margin-left: auto; flex: none; }
@@ -1112,3 +1125,4 @@ body.view-full .panel-head { padding-left: 86px; }  /* the traffic lights sit at
 .note.late .lnk { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); cursor: pointer; }
 .shelf-earlier { color: var(--accent); cursor: pointer; text-decoration: none; }
 .shelf-earlier:hover { text-decoration: underline; }
+.popup.mini-menu { max-height: none; overflow: visible; min-width: 0; }
