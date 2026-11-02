@@ -26,7 +26,6 @@
         <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
       </button>
     </div>
-    <div id="ctx-menu" class="popup menu" hidden></div>
   </aside>
 
   <main id="main" class="pane">
@@ -38,6 +37,10 @@
         <span class="thumb"></span>
         <button data-v="full">Full</button><button data-v="thinking">Thinking</button><button data-v="chat">Chat</button>
       </div>
+      <button id="mini-pin" class="icb" hidden>
+        <svg class="i" viewBox="0 0 24 24"><path d="M9.5 4h5l-.8 5.5 3 3.5H7.3l3-3.5L9.5 4ZM12 13v7"/></svg>
+      </button>
+      <button id="mini-btn" class="icb" title="Mini window (⌘⇧M)"><svg class="i" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l6-6M4 20l6-6"/></svg></button>
       <button id="panel-btn" class="icb" title="Shelf, changes, notes and stats (⌘\)">
         <svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
       </button>
@@ -116,6 +119,7 @@
   </aside>
 </div>
 
+<div id="ctx-menu" class="popup menu" hidden></div>
 <div id="peek" class="pop" tabindex="-1" hidden>
   <div class="peek-h"><span class="peek-t"></span><span class="peek-m"></span><span class="spacer"></span>
     <div class="seg peek-mode" hidden><button data-pm="page">Page</button><button data-pm="code">Code</button></div>

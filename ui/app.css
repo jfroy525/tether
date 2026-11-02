@@ -272,7 +272,7 @@ body:not(.dark) .seg .thumb { background: #fff; }
 .thread-title:hover { background: var(--hover); }
 .thread-title-edit { font-size: var(--fs-h); font-weight: 600; height: 28px; width: 40%; border: 1px solid var(--accent-line); border-radius: var(--r-1);
   background: var(--surface); padding: 0 6px; outline: none; }
-.crumbs { display: flex; align-items: center; gap: 0; min-width: 0; max-width: 100%; flex: 0 1 auto; overflow: hidden; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; gap: 0; min-width: 0; max-width: 100%; flex: 0 1 auto; overflow: hidden; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }
 .crumbs > span + span::before { content: "·"; margin: 0 6px; color: var(--text-3); }
 .crumbs > span + span:is(.ok, .warn, .bad, .info) { margin-left: 10px; }  /* a state dot stands in for the separator */
 .crumbs > span { display: inline-flex; align-items: center; gap: 6px; }
@@ -948,6 +948,29 @@ body.dark, .tone-dark { --lane0: #6CCDE3; --lane1: #B59AF0; --lane2: #F2A65A; --
 #chats button, #panel-body button, .modal-box button, .seg, .thinking summary, .perm .acts, .tool .row, .rp-merged > summary { -webkit-user-select: none; user-select: none; }
 
 /* ---------- the View tab: artifacts and files kept beside the chat ---------- */
+/* Mini window (⌘⇧M). mini-go is on while mini.py moves the window, so the panes fold on its smooth spring
+   (--mini-ease, sampled in app.js) and the grid's columns don't animate any other time. */
+body { --mini-ease: cubic-bezier(.2, .9, .3, 1); }
+body.mini-go #app { transition: grid-template-columns .9s var(--mini-ease); }
+body.mini-go #side { transition: opacity .3s var(--soft); }
+body.mini-go #panel { transition: width .9s var(--mini-ease), margin .9s var(--mini-ease), opacity .3s var(--soft); }
+body.mini-go #bar { transition: height .5s var(--soft), padding .5s var(--soft); }
+body.mini-go .chat-inner, body.mini-go #composer { transition: padding .5s var(--soft); }
+body.mini #app { grid-template-columns: 0px minmax(0, 1fr) auto; }
+body.mini #side { opacity: 0; pointer-events: none; }
+body.mini #panel { width: 0 !important; margin: 8px 0; opacity: 0; pointer-events: none; }
+body.mini #bar { height: 40px; padding: 0 8px 0 76px; }  /* room for the traffic lights */
+body.mini #bar-right, body.mini #view-seg, body.mini #panel-btn { display: none; }
+body.mini .chat-inner { padding-left: 14px; padding-right: 14px; }
+body.mini #composer { padding: 0 10px 10px; }
+body.mini #tools-wrap, body.mini #fast-btn { display: none; }
+#mini-pin.off { color: var(--text-3); opacity: .6; }
+.mini-title { display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 100%; }
+.mini-pick { border: 0; background: transparent; color: var(--text-3); font-size: 11px; padding: 3px 6px; border-radius: 6px; cursor: pointer; flex: none; }
+.mini-pick:hover { background: var(--hover); color: var(--text); }
+.popup .it.mini-it { align-items: center; }
+.popup .it.mini-it .a { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup .it.mini-it .b, .popup .it .mini-k { margin-left: auto; flex: none; }
 #panel-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 8; }
 #panel-grip:hover { background: linear-gradient(90deg, var(--accent-line) 0 2px, transparent 2px); }
 body.resizing, body.resizing * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }

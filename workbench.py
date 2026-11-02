@@ -33,6 +33,7 @@ import recall
 import slim
 import repos
 import notifier
+import mini
 import updater
 import screen
 import voice
@@ -78,7 +79,10 @@ DEFAULTS = {
     "shelf_hours": 24,        # the Shelf lists what's this recent; older items wait under Earlier in its menu (0 = everything)
     "claude_path": "",
     "pinned": [],
+    "mini_on_top": True,      # the mini window floats above other apps (its pin button)
+    "mini_frame": [],         # where you last left the mini window: x, y, width, height (macOS points)
 }
+FULL_MIN, MINI_MIN, MINI_SIZE = (900, 560), (320, 380), (380, 580)
 
 
 def load_settings() -> dict:
@@ -94,6 +98,7 @@ class Api:
 
     def __init__(self):
         self._window = None
+        self._mini_on, self._full_frame, self._mini_timer = False, None, None
         self._ready = False
         self._outbox: queue.Queue = queue.Queue()
         self.settings = load_settings()
@@ -1607,6 +1612,57 @@ class Api:
             if self._window:
                 self._window.show()
         AppHelper.callAfter(front)
+
+    # ---------- mini window ----------
+    def set_mini(self, on):
+        """Shrink to the mini window or grow back. The page has already started folding its panes; mini.py moves the window."""
+        import AppKit
+        from PyObjCTools import AppHelper
+        n = self._window.native if self._window else None
+        if not n or n.styleMask() & AppKit.NSWindowStyleMaskFullScreen:
+            return False
+        AppHelper.callAfter(self._mini, bool(on))
+        return True
+
+    def set_mini_on_top(self, on):
+        self.settings["mini_on_top"] = bool(on)
+        self._save()
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(self._mini_level)
+        return self.settings
+
+    def _mini_level(self) -> None:
+        import AppKit
+        n = self._window.native if self._window else None
+        if n:
+            n.setLevel_(AppKit.NSFloatingWindowLevel if self._mini_on and self.settings["mini_on_top"] else AppKit.NSNormalWindowLevel)
+
+    def _mini(self, on: bool) -> None:
+        """Main thread. Shrinks to the corner (or where you last left it) and grows back to exactly where it was."""
+        import AppKit
+        n = self._window.native if self._window else None
+        if not n or on == self._mini_on or n.styleMask() & AppKit.NSWindowStyleMaskFullScreen:
+            return
+        self._mini_on = on
+        cur = n.frame()
+        rect = lambda r: AppKit.NSMakeRect(*r)
+        if on:
+            self._full_frame = cur
+            saved = self.settings.get("mini_frame") or []
+            seen = lambda r: any(AppKit.NSIntersectsRect(rect(r), sc.visibleFrame()) for sc in AppKit.NSScreen.screens())
+            if len(saved) == 4 and saved[2] >= MINI_MIN[0] and saved[3] >= MINI_MIN[1] and seen(saved):
+                to = rect(saved)
+            else:
+                vis = (n.screen() or AppKit.NSScreen.mainScreen()).visibleFrame()
+                w, h = MINI_SIZE[0], min(MINI_SIZE[1], vis.size.height - 32)
+                to = AppKit.NSMakeRect(vis.origin.x + vis.size.width - w - 16, vis.origin.y + 16, w, h)
+        else:
+            self.settings["mini_frame"] = [cur.origin.x, cur.origin.y, cur.size.width, cur.size.height]
+            self._save()
+            to = self._full_frame or AppKit.NSMakeRect(cur.origin.x, cur.origin.y, 1360, 880)
+        self._mini_level()
+
+        mini.run(n, to, lambda: n.setMinSize_(AppKit.NSSize(*(MINI_MIN if self._mini_on else FULL_MIN))))
 
     # ---------- updates from GitHub ----------
     def update_status(self, force=False):

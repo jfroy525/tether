@@ -2359,6 +2359,11 @@ async function refreshRepo(fresh) {
     if (state.panel) renderPR();
   }
 }
+function hostName(url) {
+  const u = (url || "").toLowerCase();
+  return u.includes("github") ? "GitHub" : u.includes("dev.azure.com") || u.includes("visualstudio.com") ? "Azure DevOps"
+    : u.includes("gitlab") ? "GitLab" : u.includes("bitbucket") ? "Bitbucket" : "the server";
+}
 function renderBar() {
   const S = state.open.get(state.active);
   const left = $("#bar-repo"), right = $("#bar-right");
@@ -2371,6 +2376,16 @@ function renderBar() {
   title.textContent = S.title || "New session";
   title.title = "Rename";
   title.onclick = () => renameThread(S, title);
+  if (document.body.classList.contains("mini")) {
+    const row = el("div", "mini-title");
+    row.appendChild(title);
+    const pick = el("button", "mini-pick", "▾");
+    pick.title = "Switch chat";
+    pick.onclick = e => { e.stopPropagation(); miniMenu(pick); };
+    row.appendChild(pick);
+    left.appendChild(row);
+    return;
+  }
   left.appendChild(title);
   const crumbs = el("div", "crumbs");
   const add = (text, cls, tip, onclick) => {
@@ -2384,21 +2399,93 @@ function renderBar() {
   const where = add(st && st.git ? st.name + (many ? " ▾" : "") : home ? "Home" : basename(S.cwd), "",
     st && st.git ? tilde(st.root) + (many ? " · Switch repo" : "") : tilde(S.cwd), many ? e => { e.stopPropagation(); repoMenu(S, where); } : null);
   if (st && st.git) {
-    add(st.branch, "mono", st.upstream ? `Tracking ${st.upstream}` : "No upstream");
-    if (st.ahead || st.behind) add(`${st.ahead ? "↑" + st.ahead : ""}${st.ahead && st.behind ? " " : ""}${st.behind ? "↓" + st.behind : ""}`, "mono " + (st.behind ? "warn" : ""), st.behind ? "Behind its upstream" : "Ahead of its upstream");
+    // Only what needs you: main and no changes say nothing
+    const host = hostName(st.remote);
+    const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+    if (st.branch && !["main", "master"].includes(st.branch))
+      add(`On branch ${st.branch}`, "", st.upstream ? `Linked to ${st.upstream}` : `Not on ${host} yet`);
+    if (st.ahead) add(`${plural(st.ahead, "commit")} not on ${host}`, "", "Push to send them");
+    if (st.behind) add(`${plural(st.behind, "new commit")} on ${host}`, "warn", "Pull to get them");
     const n = st.files.length;
-    add(n ? `${n} changed` : "Clean", n ? "warn" : "", n ? "Show changes" : "", () => togglePanel(true, "changes"));
+    if (n) add(`${plural(n, "file")} changed`, "warn", "Show changes", () => togglePanel(true, "changes"));
     const pr = state.repo.pr;
     if (pr) {
       const c = pr.checks;
       const done = pr.state === "MERGED" || pr.state === "CLOSED";
       const cls = done ? "" : c.failed ? "bad" : c.pending ? "warn" : c.total ? "ok" : "";
-      add(`PR #${pr.number}${done ? " " + pr.state.toLowerCase() : pr.draft ? " draft" : ""}${!done && c.total ? (c.failed ? ` · ${c.failed} failing` : c.pending ? ` · ${c.pending} running` : " · checks pass") : ""}`, cls,
+      add(`Pull request #${pr.number}${done ? " " + pr.state.toLowerCase() : pr.draft ? " draft" : ""}${!done && c.total ? (c.failed ? ` · ${c.failed} failing` : c.pending ? ` · ${c.pending} running` : " · checks pass") : ""}`, cls,
         `${pr.title} → ${pr.base}${pr.review ? " · " + pr.review.toLowerCase().replace(/_/g, " ") : ""}`, () => api().open_url(pr.url));
     }
   }
   if (st && st.databricks) add(`Databricks ${st.databricks.label || st.databricks.profile}`, "", `${st.databricks.profile || ""} ${st.databricks.host || ""}`.trim());
   left.appendChild(crumbs);
+}
+// Mini window (⌘⇧M): one chat in a corner, above other apps. mini.py glides the window there; the sidebar and panel
+// fold here on the same smooth curve (springCurve), so both land together.
+const MINI_ICONS = {
+  shrink: `<svg class="i" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l6-6M4 20l6-6"/></svg>`,
+  grow: `<svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>`,
+};
+function springCurve() {  // mini.py SMOOTH, sampled for CSS
+  const z = .85, w0 = 11, wd = w0 * Math.sqrt(1 - z * z), pts = [];
+  for (let i = 0; i <= 40; i++) { const t = .9 * i / 40; pts.push(i === 40 ? 1 : +(1 - Math.exp(-z * w0 * t) * (Math.cos(wd * t) + z * w0 / wd * Math.sin(wd * t))).toFixed(4)); }
+  return `linear(${pts.join(", ")})`;
+}
+function setMini(on) {
+  const b = document.body, now = b.classList.contains("mini");
+  on = on ?? !now;
+  if (on === now) return;
+  if (!b.style.getPropertyValue("--mini-ease") && CSS.supports("transition-timing-function", "linear(0, 1)")) b.style.setProperty("--mini-ease", springCurve());
+  const S = state.open.get(state.active), bottom = S && (on || nearBottom(S));  // the mini window shows the latest messages
+  b.classList.add("mini-go");
+  b.classList.toggle("mini", on);
+  $("#ctx-menu").hidden = true;
+  api().set_mini(on).then(ok => {
+    if (ok !== false) return;
+    b.classList.toggle("mini", !on); b.classList.remove("mini-go"); renderMiniBar(); renderBar();
+    toast("Leave full screen first.");
+  });
+  if (bottom) {  // text rewraps every frame as the window changes size; keep the newest line in view the whole way
+    S.stick = true; S.glide = false;
+    const end = performance.now() + 1000;
+    const hold = () => { S.el.scrollTop = S.el.scrollHeight; S.setTop = S.el.scrollTop; if (performance.now() < end) requestAnimationFrame(hold); else syncJump(); };
+    hold();
+  }
+  clearTimeout(setMini.t);
+  setMini.t = setTimeout(() => { b.classList.remove("mini-go"); glide($("#view-seg")); if (state.panel) applyPanelW(); }, 950);
+  renderMiniBar();
+  renderBar();
+}
+function renderMiniBar() {
+  const on = document.body.classList.contains("mini"), top = state.settings.mini_on_top !== false;
+  const b = $("#mini-btn");
+  b.innerHTML = on ? MINI_ICONS.grow : MINI_ICONS.shrink;
+  b.title = on ? "Full size (⌘⇧M)" : "Mini window (⌘⇧M)";
+  const p = $("#mini-pin");
+  p.hidden = !on;
+  p.classList.toggle("off", !top);
+  p.title = top ? "Stays above other apps · click to let them cover it" : "Keep above other apps";
+}
+function miniMenu(anchor) {
+  const m = $("#ctx-menu");
+  m.innerHTML = "";
+  m.style.width = Math.min(280, innerWidth - 16) + "px";
+  const list = [...state.open.values()].sort((a, b) => b.lastActive - a.lastActive);
+  for (const S of list) {
+    const st = liveStatus(S);
+    const row = el("div", "it mini-it" + (S.sid === state.active ? " sel" : ""), `<span class="dot ${st}"></span><span class="a"></span><span class="b">${STATUS_WORDS[st] || ""}</span>`);
+    row.querySelector(".a").textContent = S.title || "New session";
+    row.onclick = e => { e.stopPropagation(); m.hidden = true; openSession(S.sid, S.cwd, S.title); };
+    m.appendChild(row);
+  }
+  m.appendChild(el("div", "sep"));
+  const nw = el("div", "it", `<span class="a">New session</span><span class="b mini-k">⌘N</span>`);
+  nw.onclick = e => { e.stopPropagation(); m.hidden = true; newSessionDialog(); };
+  m.appendChild(nw);
+  m.hidden = false;
+  const a = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(a.left - 40, innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.top = a.bottom + 6 + "px";
 }
 function renameThread(S, node) {
   const input = el("input", "thread-title-edit");
@@ -3105,6 +3192,9 @@ function wire() {
   new ResizeObserver(() => document.documentElement.style.setProperty("--dock-h", $("#composer").offsetHeight + "px")).observe($("#composer"));
   window.addEventListener("resize", () => { glide($("#view-seg")); placePeek(); fitRunMenu(); if (state.panel) applyPanelW(); });
   $("#panel-btn").onclick = () => openPanelButton();
+  $("#mini-btn").onclick = () => setMini();
+  $("#mini-pin").onclick = async () => { state.settings = await api().set_mini_on_top(state.settings.mini_on_top === false); renderMiniBar(); };
+  renderMiniBar();
   document.querySelectorAll("#view-seg button").forEach(b => { b.title = `${VIEWS[b.dataset.v].text} (⌘D)`; b.onclick = () => setView(b.dataset.v); });
   $("#run-btn").onclick = e => { e.stopPropagation(); const m = $("#run-menu"); m.hidden = !m.hidden; if (!m.hidden) { renderRunMenu(); loadCtx(); } };
   $("#tools-btn").onclick = e => { e.stopPropagation(); const m = $("#tools-menu"); m.hidden = !m.hidden; if (!m.hidden) { renderToolsMenu(); api().marks_up().then(v => { state.marksUp = !!v; if (!m.hidden) renderToolsMenu(); }, () => {}); } };
@@ -3187,6 +3277,8 @@ function wire() {
   document.addEventListener("keydown", e => {
     if (state.circling && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); api().circle_key(e.key); return; }
     const S = state.open.get(state.active);
+    if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "m") { e.preventDefault(); return setMini(); }
+    if (e.metaKey && ["\\", "j", "i"].includes(e.key) && document.body.classList.contains("mini")) setMini(false);  // the panel needs the full window
     if (e.metaKey && e.key === "n") { e.preventDefault(); newSessionDialog(); }
     else if (e.metaKey && e.key === "k") { e.preventDefault(); $("#palette").hidden ? openPalette() : closePalette(); }
     else if (e.metaKey && e.key === "\\") { e.preventDefault(); openPanelButton(); }
