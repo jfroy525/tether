@@ -28,6 +28,7 @@ The build makes `~/Applications/Tether.app`, which runs the code in this folder.
 The first time you use each of these, macOS asks for permission (System Settings › Privacy & Security):
 - **Microphone:** dictation. Speech is turned into text on your Mac with Whisper; the speech model (about 150 MB) downloads the first time.
 - **Screen Recording:** circling things on screen, Claude looking at your screen, and glass that adjusts to what's behind it.
+- **Notifications:** when a chat finishes or needs you while Tether is in the background. They show Tether's logo, and clicking one opens that chat. Keep Tether.app in your Applications folder (the build puts it in `~/Applications`), or macOS refuses them. Turn them off in Settings.
 
 ## Cost and privacy
 
@@ -78,6 +79,7 @@ Settings (⌘,) holds the hotkeys, mic, speech model, work words for dictation, 
 - `history.py`: past sessions from ~/.claude/projects · `repos.py`: git, gh and (if you use it) Databricks status and repo discovery
 - `voice.py`: dictation · `screen.py`, `markup.html`: screenshots and marks
 - `recall.py`: the per-session search index and the Haiku lookup · `notes.py`: running notes · `slim.py`: removes old screenshots from transcripts
+- `notifier.py`: Mac notifications · `boot/`: starts Tether when Tether.app runs Python as its own program, so macOS shows notifications as Tether's
 - `updater.py`: checks GitHub for a newer Tether (at most every 6 hours), updates this folder and restarts
 - `wb_mcp.py`: tools for Claude (look_at_screen, list_windows, mark_up_screen, show_table, show_artifact, recall, session_notes)
 - `artifacts.py`: the Shelf's versions and which chat showed each (in the support folder, never the project), sealed pages, changed lines · `artifact_snap.py`: draws a page off screen for Claude to look at

@@ -105,6 +105,24 @@ def tracked(path: str) -> bool:
     return (_dir(path) / "index.json").exists()
 
 
+def moved_to(path: str) -> str | None:
+    """A gone file's new name: a file in the same folder that's byte for byte one of its last saved versions."""
+    p = Path(path).expanduser()
+    kept = [read_version(path, v["n"]) for v in versions(path)[-3:]]
+    kept = {len(b): b for b in kept if b}
+    try:
+        files = [f for f in p.parent.iterdir() if f.is_file() and f != p][:300]
+    except OSError:
+        return None
+    for f in files:
+        try:
+            if kind(str(f)) == kind(path) and f.stat().st_size in kept and f.read_bytes() == kept[f.stat().st_size]:
+                return str(f)
+        except OSError:
+            continue
+    return None
+
+
 def read_version(path: str, n: int) -> bytes | None:
     try:
         return (_dir(path) / f"{int(n)}").read_bytes()

@@ -32,6 +32,7 @@ import notes
 import recall
 import slim
 import repos
+import notifier
 import updater
 import screen
 import voice
@@ -88,11 +89,6 @@ def load_settings() -> dict:
     return {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
 
 
-def notify(title: str, text: str) -> None:
-    script = f"display notification {json.dumps(text[:180])} with title {json.dumps(title[:80])}"
-    subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 class Api:
     """Methods the page can call. Underscore names are hidden from JavaScript."""
 
@@ -134,7 +130,9 @@ class Api:
             if sid:
                 self._worked.add(sid)
         if t == "permission":
-            self._maybe_notify(sid, "Needs your approval: " + str(ev.get("label") or ev.get("tool"))[:100])
+            kind = ev.get("kind")
+            self._maybe_notify(sid, "Has a question for you" if kind == "question" else "Has a plan for you to check"
+                               if kind == "plan" else "Needs your approval: " + str(ev.get("label") or ev.get("tool"))[:100])
         # each check below stands on its own: one event can matter to several of them
         if t in ("result", "compaction") and sid and self.settings.get("keep_notes", True):
             self._bg(self._notes_auto, sid, t == "compaction")
@@ -191,7 +189,14 @@ class Api:
             focused = False
         s = self._sessions.get(sid)
         if not focused and s:
-            notify(s.title or APP_NAME, text)
+            notifier.post(sid, s.title or APP_NAME, text)
+
+    def _notice_clicked(self, sid: str) -> None:
+        """You clicked a notification: bring Tether forward on that chat (its newest part, if it started fresh since)."""
+        now = next((s.sid for s in list(self._sessions.values()) if sid in recall.lineage(s.sid)), sid)
+        s = self._sessions.get(now)
+        self._emit({"type": "open_chat", "sid": now, "cwd": s.cwd if s else "", "title": s.title if s else ""})
+        self._show_window()
 
     def _send_loop(self) -> None:
         """Delivers events about every 30 ms, merging runs of text from the same session."""
@@ -1196,7 +1201,7 @@ class Api:
         t = artifacts.kind(path)
         out = {"path": str(p), "short": engine.short(str(p)), "type": t}
         if not p.is_file():
-            return {**out, "missing": True, "versions": artifacts.versions(path)}
+            return {**out, "missing": True, "moved_to": artifacts.moved_to(path)}  # no versions: nothing to restore over
         st = p.stat()
         out["mtime"], out["size"] = st.st_mtime, st.st_size
         if t == "image":
@@ -1232,6 +1237,21 @@ class Api:
         """The picture that goes with your notes on a Shelf page: the page at the size you saw it, with numbered pins."""
         r = artifacts.look(path, max(320, min(1600, int(width or 600))), {"vh": vh, "pins": pins, "color": color}, bool(dark))
         return {"data": r["jpeg"], "media_type": "image/jpeg"} if r.get("jpeg") else {"error": r.get("error") or "Couldn't draw the page."}
+
+    def permissions(self):
+        """What macOS has switched off that a setting needs, for the lines under it in Settings."""
+        try:
+            import Quartz
+            screen = bool(Quartz.CGPreflightScreenCaptureAccess())
+        except Exception:  # noqa: BLE001
+            screen = True
+        return {"screen": screen, "notify_off": notifier.turned_off()}
+
+    def open_mac_settings(self, which):
+        url = {"notifications": "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=local.tether",
+               "screen": "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture"}.get(which)
+        if url:
+            subprocess.Popen(["open", url])
 
     def open_url(self, url):
         if re.match(r"^https?://", str(url)):
@@ -1562,6 +1582,8 @@ class Api:
         self._save()
         from PyObjCTools import AppHelper
         AppHelper.callAfter(self._bind_keys)
+        if self.settings["notify"] and not notifier.asked():  # switched on now: macOS asks for permission once
+            AppHelper.callAfter(notifier.setup, self._notice_clicked)
         self._dictation.warm(self.settings["whisper_model"])
         return self.settings
 
@@ -1718,6 +1740,19 @@ def brand_the_process() -> None:
         pass
 
 
+def keep_page_storage() -> None:
+    """Before Tether.app ran Python as its own program, WebKit kept the page's saved layout under "python"."""
+    try:
+        from Foundation import NSBundle
+        bid = NSBundle.mainBundle().bundleIdentifier()
+        old, new = Path.home() / "Library/WebKit/python", Path.home() / "Library/WebKit" / str(bid)
+        if bid and old.is_dir() and not new.exists():
+            import shutil
+            shutil.copytree(old, new, symlinks=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main() -> int:
     os.environ["TETHER_APP_NAME"] = APP_NAME  # guard.py names the app in its approval reason
     old = next((p for p in OLD_SUPPORTS if p.is_dir()), None)
@@ -1730,6 +1765,7 @@ def main() -> int:
     screen.LAST = SUPPORT / "last-screen.json"; screen.CIRCLED = SUPPORT / "circled.json"
     artifacts.STORE = SUPPORT / "artifacts"
     os.environ["TETHER_LOOK"] = str(SUPPORT / "look.json")  # light or dark now, so Claude's picture of a page matches the panel
+    keep_page_storage()
     api = Api()
     webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True  # the header drags the window; its buttons don't
     window = webview.create_window(APP_NAME, url=str(HERE / "ui" / "index.html"), js_api=api, width=1360, height=880,
@@ -1751,6 +1787,8 @@ def main() -> int:
         from PyObjCTools import AppHelper
         AppHelper.callAfter(api._bind_keys)
         AppHelper.callAfter(glass_window, window)
+        if api.settings["notify"]:
+            AppHelper.callAfter(notifier.setup, api._notice_clicked)
         api._dictation.warm(api.settings["whisper_model"])
         threading.Thread(target=api._remember_models, daemon=True).start()
         threading.Thread(target=api._watch_files, daemon=True).start()

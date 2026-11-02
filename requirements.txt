@@ -6,3 +6,4 @@ numpy
 pyobjc-framework-Quartz
 pyobjc-framework-Cocoa
 truststore
+pyobjc-framework-UserNotifications

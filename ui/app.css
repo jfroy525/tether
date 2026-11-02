@@ -555,6 +555,7 @@ body.dark:not(.glass-solid) .round-btn.stop i { background: #0D1317; }
 .panel-repo .mono { font-weight: 400; color: var(--text-3); margin-left: 6px; }
 .panel-repo:first-child { padding-top: 2px; }
 .panel-empty { color: var(--text-3); padding: 20px 10px; text-align: center; }
+.panel-empty .lnk { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); cursor: pointer; }
 
 /* stats: plain figures and rows */
 .st-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; padding: 10px 8px 14px; border-bottom: 1px solid var(--line); }

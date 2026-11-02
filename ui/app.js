@@ -850,7 +850,7 @@ async function renderView(S, body, refresh) {
   if (state.tab !== "view" || state.active !== S.sid || S.viewSel !== it.path) return;
   if (!S.viewBase && r.n) S.viewBase = r.n;  // changed lines are counted from the version you first saw
   Object.assign(viewShown, { sid: S.sid, path: it.path, mtime: r.mtime || 0, size: r.size || 0, n: r.n || 0 });
-  const vs = r.versions || [], old = S.viewN && S.viewN !== r.n;
+  const vs = r.versions || [], old = !r.missing && S.viewN && S.viewN !== r.n;
   const imgs = items.filter(x => x.type === "image" && !!x.old === !!it.old), ii = imgs.indexOf(it);
   const ch = r.changes?.lines?.length ? r.changes : null;
   body.classList.add("view-body");
@@ -871,7 +871,11 @@ async function renderView(S, body, refresh) {
   body.querySelector(".vw-name .t").textContent = it.title || basename(it.path);
   body.querySelector(".vw-f").textContent = r.missing ? `${it.short || it.path} · not found` : (it.short || it.path);
   const frame = body.querySelector(".vw-frame");
-  if (r.missing) frame.appendChild(el("div", "panel-empty", "This file isn't there anymore."));
+  if (r.missing && r.moved_to) {  // renamed or moved within its folder: point to it
+    const m = el("div", "panel-empty", `This file was renamed to ${esc(basename(r.moved_to))} · <a class="lnk">Show it</a>`);
+    m.querySelector("a").onclick = async () => { const n = await api().view_open(S.sid, r.moved_to, true); await loadView(S); openInView(S, n.path); };
+    frame.appendChild(m);
+  } else if (r.missing) frame.appendChild(el("div", "panel-empty", "This file isn't there anymore."));
   else if (r.error) frame.appendChild(el("div", "panel-empty", esc(r.error)));
   else if (r.html != null) {
     const f = el("iframe");
@@ -1447,6 +1451,7 @@ function onEvent(ev) {
       if (!ev.busy && ev.error) toast("Notes: " + ev.error, "error");
       break;
     case "fresh_start": freshStart(ev); break;
+    case "open_chat": openFromNotice(ev); break;
     case "fresh_prep": if (S) S.freshPrep = !ev.done; break;
     case "fast_unavailable": state.settings.fast_unavailable = ev.reason; if (S && S.sid === state.active) syncModes(S); break;
     case "modes": if (S) { S.modes = ev; S.fast = !!ev.want_fast; if (ev.permission) S.permMode = ev.permission; if (S.sid === state.active) syncModes(S); } break;
@@ -1883,6 +1888,11 @@ async function openSession(sid, cwd, title) {
     if (r.pending_fresh) add(S, freshCard(S, { from: r.parts?.[0]?.slice(0, 8) }));  // started fresh, first message not sent yet
   }
   activate(sid);
+}
+// A click on a Mac notification: that chat, open or not.
+function openFromNotice(ev) {
+  const s = (state.sessions || []).find(x => x.id === ev.sid);
+  openSession(ev.sid, ev.cwd || s?.cwd || "", ev.title || s?.title || "").catch(() => {});
 }
 // A long conversation is several sessions joined by fresh starts. Scrolling back: the earlier parts load above.
 function olderPartButton(S, parts) {
@@ -2934,6 +2944,8 @@ function closeModal() { $("#modal").hidden = true; $(".modal-box").classList.rem
 
 async function settingsDialog() {
   const { settings: s, hotkeys, mics } = await api().get_settings();
+  const mac = await api().permissions().catch(() => ({}));  // a line under a setting when macOS has it switched off
+  const macOff = (what, pane) => row(`<span class="dim">${what}</span>`, `<button class="btn ghost small" data-mac="${pane}">Open</button>`);
   if (!state.models?.length) state.models = await api().models();  // the model list for new chats
   const opts = (pairs, v) => pairs.map(([k, l]) => `<option value="${esc(k)}" ${k === v ? "selected" : ""}>${esc(l)}</option>`).join("");
   const keys = v => opts(Object.entries(hotkeys), v);
@@ -2952,6 +2964,7 @@ async function settingsDialog() {
       + row("Transparency", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="transparency" value="${esc(s.transparency ?? 55)}"><span class="mono">${esc(s.transparency ?? 55)}%</span></span>`, "How much of your desktop shows through the window. 0 is a solid window")
       + row("Frost", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="frost" value="${esc(s.frost ?? 50)}"><span class="mono">${esc(s.frost ?? 50)}%</span></span>`, "How strongly the desktop behind the window is blurred. 0 is sharp, 50 is the macOS default")
       + row("Adjust to what's behind", sw("glass_adapt", s.glass_adapt !== false), "Each part of the window checks what's behind it about once a second, and switches to dark or light text, or adds a little tint, so text stays readable")
+      + (mac.screen === false && s.glass_adapt !== false ? macOff("Needs Screen Recording", "screen") : "")
       + row("Accent color", `<span class="accent-pick"><input type="color" data-accent value="${esc(s.accent || "#0B6E86")}"><input type="text" class="mono" data-k="accent" value="${esc(s.accent || "")}" placeholder="Default" spellcheck="false"><button class="btn ghost small" data-accent-reset ${s.accent ? "" : "hidden"}>Default</button></span>`, "Any color. Tether shades it for light and dark so text and buttons stay readable")
       + row("Text size", `<select data-k="text_size">${opts(TEXT_SIZES.map(v => [String(v), v === 100 ? "100% (default)" : v + "%"]), String(s.text_size ?? 100))}</select>`, "Every font in the window. ⌘+ and ⌘− step it, ⌘0 resets")
       + row("Color bold words", sw("bold_accent", s.bold_accent !== false), "Bold words in Claude's replies take the accent color, so the key points stand out. Links get an underline to stay distinct")
@@ -2963,7 +2976,8 @@ async function settingsDialog() {
     ${sec("Screen", row("Circle to explain", `<select data-k="circle_key">${keys(s.circle_key)}</select>`)
       + row("Keep Claude's marks for", `<select data-k="mark_linger">${opts([["10", "10 seconds"], ["30", "30 seconds"], ["60", "1 minute"], ["300", "5 minutes"], ["0", "Until my next message"]], String(s.mark_linger))}</select>`))}
     ${sec("Shelf", row("Show items from", `<select data-k="shelf_hours">${opts([["24", "The last day"], ["72", "The last 3 days"], ["168", "The last week"], ["0", "The whole chat"]], String(s.shelf_hours ?? 24))}</select>`, "Older ones wait under Earlier in the Shelf's item menu"))}
-    ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background"))}
+    ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
+      + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
     <section class="set-sec"><h3>Advanced</h3>
       ${row("Stream Claude's thinking", sw("show_thinking", s.show_thinking), "Applies to sessions started after you change it")}
       ${row("Speech model", `<select data-k="whisper_model">${opts([["tiny", "Tiny (fastest)"], ["base", "Base"], ["small", "Small"], ["medium", "Medium (most accurate)"]], s.whisper_model)}</select>`)}
@@ -2975,6 +2989,7 @@ async function settingsDialog() {
     </section>
     <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
   sheetNav(box);
+  box.querySelectorAll("[data-mac]").forEach(b => b.onclick = () => api().open_mac_settings(b.dataset.mac));
   box.querySelector("#fast-recheck")?.addEventListener("click", async e => {
     state.settings = await api().save_settings({ fast_unavailable: "" });
     e.target.closest(".setrow").remove();
