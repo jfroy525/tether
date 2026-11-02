@@ -1,0 +1,8 @@
+pywebview
+faster-whisper
+sounddevice
+soundfile
+numpy
+pyobjc-framework-Quartz
+pyobjc-framework-Cocoa
+truststore

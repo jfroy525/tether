@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Live markup: a transparent, click-through window over the user's screen. Claude's circles, boxes,
+     highlights, arrows, numbered steps, notes and freehand lines draw themselves in like a pen, one after
+     another, and stay until the app clears them. Any CSS colour works; the four named ones are tuned. -->
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  svg { position: fixed; inset: 0; width: 100%; height: 100%; }
+  .ink { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+  .glow { fill: none; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; opacity: .22; filter: blur(3px); }
+  .tag { font: 600 15px -apple-system, "SF Pro Text", sans-serif; }
+  .note { font: 500 15px/1.35 -apple-system, "SF Pro Text", sans-serif; }
+  .num { font: 700 16px -apple-system, "SF Pro Text", sans-serif; }
+  g.mark { transition: opacity .6s ease; }
+  body.lasso { cursor: crosshair; }
+  .dim { fill: rgba(0, 0, 0, .2); transition: opacity .2s; }
+  #bar { position: fixed; top: 44px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 6px;
+         padding: 6px 6px 6px 16px; border-radius: 22px; background: rgba(20, 22, 26, .94); border: 1px solid rgba(255,255,255,.12);
+         box-shadow: 0 12px 34px rgba(0,0,0,.45); font: 500 14px -apple-system, "SF Pro Text", sans-serif; color: #f2f3f5; cursor: default; }
+  body.lasso #bar { display: flex; }
+  #bar span { margin-right: 8px; white-space: nowrap; }
+  #bar button { font: inherit; font-size: 13px; height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid rgba(255,255,255,.14);
+                background: none; color: #c9cdd2; cursor: pointer; }
+  #bar button:disabled { opacity: .4; cursor: default; }
+  #bar .go { background: #ffd23f; border-color: #ffd23f; color: #1a1405; font-weight: 600; }
+  g.mark.gone { opacity: 0; }
+</style>
+</head>
+<body>
+<svg id="s"></svg>
+<div id="bar"><span>Draw on anything you want explained</span>
+  <button class="undo">Undo</button><button class="cancel">Cancel</button><button class="go">Explain</button></div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const COLORS = { red: "#ff4d4d", yellow: "#ffd23f", green: "#3ecf8e", blue: "#5b9dff", orange: "#ff9233",
+                 purple: "#b07cff", pink: "#ff6fae", cyan: "#3fd8e8", white: "#ffffff", black: "#111111" };
+const paint = c => COLORS[String(c || "").toLowerCase()] || c || COLORS.red;
+// Dark or light text, whichever reads on that colour.
+const probe = document.createElement("canvas").getContext("2d");
+function textOn(color) {
+  probe.clearRect(0, 0, 1, 1); probe.fillStyle = "#000"; probe.fillStyle = color; probe.fillRect(0, 0, 1, 1);
+  const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#111" : "#fff";
+}
+const svg = document.getElementById("s");
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent && parent.appendChild(e);
+  return e;
+}
+const wob = (a) => (Math.random() - .5) * a;
+
+// A hand-drawn loop around a box: slightly more than one turn, so the ends overlap like a real pen circle.
+function loopPath(x, y, w, h) {
+  const cx = x + w / 2, cy = y + h / 2, rx = w / 2 + 14, ry = h / 2 + 12, pts = [];
+  const start = -2.2 + wob(.4), turns = 1.12;
+  for (let i = 0; i <= 64; i++) {
+    const t = start + (i / 64) * Math.PI * 2 * turns, k = 1 + .03 * Math.sin(i / 5) + (i / 64) * .05;
+    pts.push([cx + Math.cos(t) * rx * k, cy + Math.sin(t) * ry * k]);
+  }
+  return "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L");
+}
+function boxPath(x, y, w, h) {
+  const p = 8, a = [x - p + wob(3), y - p + wob(3)], b = [x + w + p + wob(3), y - p + wob(3)],
+        c = [x + w + p + wob(3), y + h + p + wob(3)], d = [x - p + wob(3), y + h + p + wob(3)];
+  return `M${a} L${b} L${c} L${d} Z`;
+}
+function underlinePath(x, y, w, h) {
+  const base = y + h + 6, pts = [];
+  for (let i = 0; i <= 24; i++) pts.push([x - 4 + (w + 8) * i / 24, base + Math.sin(i * 1.3) * 2.2]);
+  return "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L");
+}
+function arrowPaths(x1, y1, x2, y2) {
+  const mx = (x1 + x2) / 2 - (y2 - y1) * .18, my = (y1 + y2) / 2 + (x2 - x1) * .18;  // a gentle curve
+  const ang = Math.atan2(y2 - my, x2 - mx), L = 18;
+  const h1 = [x2 - L * Math.cos(ang - .45), y2 - L * Math.sin(ang - .45)], h2 = [x2 - L * Math.cos(ang + .45), y2 - L * Math.sin(ang + .45)];
+  return [`M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}`, `M${h1} L${x2} ${y2} L${h2}`];
+}
+
+function linePath(x1, y1, x2, y2) { return `M${x1} ${y1} L${x2 + wob(2)} ${y2 + wob(2)}`; }
+function strikePath(x, y, w, h) {
+  const m = y + h / 2;
+  return `M${x - 6} ${m + wob(3)} C${x + w * .3} ${m - 3 + wob(2)} ${x + w * .7} ${m + 3 + wob(2)} ${x + w + 6} ${m + wob(3)}`;
+}
+function crossPaths(x, y, w, h) { return [`M${x} ${y} L${x + w} ${y + h}`, `M${x + w} ${y} L${x} ${y + h}`]; }
+function checkPath(x, y, w, h) { return `M${x} ${y + h * .55} L${x + w * .38} ${y + h} L${x + w} ${y}`; }
+function freePath(pts) {  // a smooth line through the points
+  if (pts.length < 2) return "";
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+    d += ` Q${pts[i][0]} ${pts[i][1]} ${mx} ${my}`;
+  }
+  const last = pts[pts.length - 1];
+  return d + ` L${last[0]} ${last[1]}`;
+}
+
+function stroke(g, d, color, delay, dur) {
+  if (!d) return delay;
+  el("path", { d, class: "glow", stroke: color }, g);
+  const p = el("path", { d, class: "ink", stroke: color }, g);
+  const len = p.getTotalLength();
+  for (const q of g.querySelectorAll("path:not([data-done])")) {
+    q.dataset.done = 1;
+    q.style.strokeDasharray = len; q.style.strokeDashoffset = len;
+    q.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }], { duration: dur, delay, easing: "cubic-bezier(.3,.1,.3,1)", fill: "forwards" });
+  }
+  return delay + dur;
+}
+function appear(node, delay, dy = 6) {
+  node.style.opacity = 0;
+  node.animate([{ opacity: 0, translate: `0 ${dy}px` }, { opacity: 1, translate: "0 0" }], { duration: 260, delay, fill: "forwards", easing: "ease-out" });
+}
+
+function tag(g, text, x, y, color, delay) {
+  const t = el("g", {}, g);
+  const label = el("text", { x: 12, y: 21, class: "tag", fill: textOn(color) }, t);
+  label.textContent = text;
+  const w = label.getComputedTextLength() + 24;
+  const bx = Math.max(6, Math.min(innerWidth - w - 6, x)), by = Math.max(6, Math.min(innerHeight - 38, y));
+  t.insertBefore(el("rect", { width: w, height: 31, rx: 15.5, fill: color }), label);
+  t.setAttribute("transform", `translate(${bx} ${by})`);
+  appear(t, delay);
+}
+function note(g, text, x, y, wrap, color, delay) {  // a card of wrapped text
+  const t = el("g", {}, g), pad = 12, lh = 20, maxW = Math.max(140, Math.min(wrap || 280, 520));
+  const txt = el("text", { class: "note", fill: textOn(color) }, t);
+  const lines = [];
+  for (const para of String(text).split("\n")) {
+    let line = "";
+    for (const word of para.split(/\s+/)) {
+      const tryLine = line ? line + " " + word : word;
+      txt.textContent = tryLine;
+      if (txt.getComputedTextLength() > maxW - pad * 2 && line) { lines.push(line); line = word; } else line = tryLine;
+    }
+    lines.push(line);
+  }
+  txt.textContent = "";
+  let widest = 0;
+  lines.forEach((ln, i) => {
+    const ts = el("tspan", { x: pad, y: pad + 15 + i * lh }, txt); ts.textContent = ln;
+    widest = Math.max(widest, ts.getComputedTextLength());
+  });
+  const w = widest + pad * 2, h = lines.length * lh + pad * 2 - 4;
+  const bx = Math.max(6, Math.min(innerWidth - w - 6, x)), by = Math.max(6, Math.min(innerHeight - h - 6, y));
+  t.insertBefore(el("rect", { width: w, height: h, rx: 10, fill: color, opacity: .96 }), txt);
+  t.setAttribute("transform", `translate(${bx} ${by})`);
+  appear(t, delay);
+}
+
+window.draw = marks => {  // they stay until clearMarks(): the app times it
+  clearNow();
+  const many = marks.length > 8, gap = many ? 90 : 260, speed = many ? .6 : 1;
+  let at = 120;
+  // a spotlight goes underneath everything else
+  for (const m of marks.filter(m => m.kind === "spotlight")) {
+    const g = el("g", { class: "mark" }, svg), x = +m.x, y = +m.y, w = Math.max(+m.w || 0, 20), h = Math.max(+m.h || 0, 20), r = 14, p = 10;
+    const hole = `M${x - p + r} ${y - p} H${x + w + p - r} Q${x + w + p} ${y - p} ${x + w + p} ${y - p + r} V${y + h + p - r} Q${x + w + p} ${y + h + p} ${x + w + p - r} ${y + h + p} H${x - p + r} Q${x - p} ${y + h + p} ${x - p} ${y + h + p - r} V${y - p + r} Q${x - p} ${y - p} ${x - p + r} ${y - p} Z`;
+    const shade = el("path", { d: `M0 0 H${innerWidth} V${innerHeight} H0 Z ${hole}`, fill: "rgba(0,0,0,.55)", "fill-rule": "evenodd" }, g);
+    el("path", { d: hole, fill: "none", stroke: paint(m.color), "stroke-width": 2.5, opacity: .9 }, g);
+    shade.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, fill: "forwards" });
+    if (m.text) tag(g, m.text, x, y - 50, paint(m.color), 300);
+  }
+  for (const m of marks) {
+    if (m.kind === "spotlight") continue;
+    const color = paint(m.color), g = el("g", { class: "mark" }, svg);
+    const x = +m.x, y = +m.y, w = Math.max(+m.w || 0, 8), h = Math.max(+m.h || 0, 8);
+    let end = at, lx = x, ly = y - 44, labelled = true;
+    if (m.kind === "circle") end = stroke(g, loopPath(x, y, w, h), color, at, 650 * speed);
+    else if (m.kind === "box") end = stroke(g, boxPath(x, y, w, h), color, at, 560 * speed);
+    else if (m.kind === "underline") { end = stroke(g, underlinePath(x, y, w, h), color, at, 420 * speed); ly = y + h + 14; }
+    else if (m.kind === "strike") end = stroke(g, strikePath(x, y, w, h), color, at, 380 * speed);
+    else if (m.kind === "cross") { const [a, b] = crossPaths(x, y, Math.max(w, 24), Math.max(h, 24)); end = stroke(g, a, color, at, 260 * speed); end = stroke(g, b, color, end, 260 * speed); }
+    else if (m.kind === "check") end = stroke(g, checkPath(x, y, Math.max(w, 28), Math.max(h, 28)), color, at, 380 * speed);
+    else if (m.kind === "line") { end = stroke(g, linePath(x, y, +m.x2, +m.y2), color, at, 420 * speed); lx = x - 10; ly = y - 40; }
+    else if (m.kind === "path") end = stroke(g, freePath(m.points || []), color, at, Math.min(1600, 300 + (m.points || []).length * 30) * speed);
+    else if (m.kind === "arrow") {
+      const [shaft, head] = arrowPaths(x, y, +m.x2, +m.y2);
+      end = stroke(g, shaft, color, at, 520 * speed); end = stroke(g, head, color, end - 40, 180);
+      lx = x - 10; ly = y - 40;
+    } else if (m.kind === "highlight") {  // a highlighter stroke laid down left to right
+      const r = el("rect", { x: x - 3, y: y - 2, width: w + 6, height: h + 4, rx: 3, fill: color, opacity: .38 }, g);
+      r.style.transformBox = "fill-box"; r.style.transformOrigin = "left center";
+      r.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { duration: 380 * speed, delay: at, fill: "both", easing: "ease-out" });
+      end = at + 380 * speed;
+    } else if (m.kind === "number") {
+      const b = el("g", { transform: `translate(${x} ${y})` }, g);
+      el("circle", { r: 16, fill: color, stroke: "rgba(0,0,0,.35)", "stroke-width": 1.5 }, b);
+      const t = el("text", { class: "num", fill: textOn(color), "text-anchor": "middle", "dominant-baseline": "central" }, b);
+      t.textContent = m.text || "•"; labelled = false;
+      b.animate([{ opacity: 0, scale: .4 }, { opacity: 1, scale: 1 }], { duration: 280, delay: at, fill: "both", easing: "cubic-bezier(.2,1.4,.4,1)" });
+      end = at + 280;
+    } else if (m.kind === "note") { note(g, m.text || "", x, y, +m.w, color, at); labelled = false; end = at + 260; }
+    else if (m.kind === "label") { ly = y; }
+    if (m.text && labelled) tag(g, m.text, lx, ly, color, end - 120);
+    at = end + gap;
+  }
+};
+
+// ---- draw to ask: the user draws on the screen freehand (as many strokes as they like), then Explain
+let lassoOn = false, lassoIdx = 0, drawing = false, strokes = [], cur = null;
+const bar = document.getElementById("bar");
+window.lasso = (on, i) => {
+  clearNow(); lassoOn = on; lassoIdx = i || 0; drawing = false; strokes = [];
+  document.body.classList.toggle("lasso", on);
+  if (on) el("rect", { class: "dim", x: 0, y: 0, width: "100%", height: "100%" }, svg);
+  syncBar();
+};
+function syncBar() { bar.querySelector(".go").disabled = !strokes.length; bar.querySelector(".undo").disabled = !strokes.length; }
+function endLasso() {
+  lassoOn = false; drawing = false; document.body.classList.remove("lasso");
+  svg.querySelectorAll(".dim").forEach(n => n.remove());
+}
+window.finishLasso = () => {  // Explain (the button, or Return in the app)
+  if (!lassoOn || !strokes.length) return;
+  const all = strokes.map(s => s.pts);
+  endLasso();
+  window.pywebview.api.circle_done(lassoIdx, all);
+};
+window.cancelLasso = () => { if (lassoOn) { endLasso(); clearNow(); window.pywebview.api.circle_cancel(); } };
+bar.querySelector(".go").onclick = finishLasso;
+bar.querySelector(".cancel").onclick = cancelLasso;
+bar.querySelector(".undo").onclick = () => { const s = strokes.pop(); if (s) s.g.remove(); syncBar(); };
+addEventListener("mousedown", e => {
+  if (!lassoOn || e.button !== 0 || e.target.closest("#bar")) return;
+  drawing = true;
+  const g = el("g", { class: "mark" }, svg);
+  cur = { g, pts: [[e.clientX, e.clientY]], paths: [el("path", { class: "glow", stroke: COLORS.yellow }, g), el("path", { class: "ink", stroke: COLORS.yellow }, g)] };
+  cur.paths.forEach(p => p.setAttribute("d", `M${e.clientX} ${e.clientY} l0.1 0`));
+});
+addEventListener("mousemove", e => {
+  if (!drawing) return;
+  const [lx, ly] = cur.pts[cur.pts.length - 1];
+  if (Math.hypot(e.clientX - lx, e.clientY - ly) < 2.5) return;
+  cur.pts.push([e.clientX, e.clientY]);
+  const d = freePath(cur.pts); cur.paths.forEach(p => p.setAttribute("d", d));
+});
+addEventListener("mouseup", e => {
+  if (!drawing || e.button !== 0) return;
+  drawing = false; strokes.push(cur); cur = null; syncBar();
+});
+addEventListener("contextmenu", e => { e.preventDefault(); cancelLasso(); });
+addEventListener("keydown", e => {
+  if (e.key === "Escape") cancelLasso();
+  if (e.key === "Enter") finishLasso();
+});
+
+function fadeOut() {
+  svg.querySelectorAll("g.mark").forEach(g => g.classList.add("gone"));
+  setTimeout(clearNow, 700);
+}
+function clearNow() { svg.innerHTML = ""; }
+window.clearMarks = fadeOut;
+</script>
+</body>
+</html>
