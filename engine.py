@@ -141,13 +141,16 @@ def make_diff(before: str | None, after: str | None) -> dict:
 
 class Session:
     def __init__(self, emit: Callable[[dict], None], cwd: str, settings: dict, sid: str | None = None,
-                 resume: bool = False, title: str = ""):
+                 resume: bool = False, title: str = "", fork_from: str = ""):
         self.emit = emit
         self.cwd = cwd
         self.settings = settings
         self.sid = sid or str(uuid.uuid4())
         self.resume = resume  # an existing Claude Code session: start the process with --resume
         self.title = title
+        self.fork_from = fork_from  # Run separately: start as a copy of this chat under our own id
+        self.extra_settings: dict = {}  # merged into --settings (a side question's hook that turns tools off)
+        self.no_persist = False  # a throwaway copy: Claude Code doesn't save it, so it never shows in the list
         self.model = settings.get("model", "")
         self.effort = settings.get("effort", "")
         self.perm_mode = settings.get("perm_mode", "")   # "" = your Claude Code default
@@ -190,12 +193,17 @@ class Session:
                                                     **({"TETHER_LOOK": os.environ["TETHER_LOOK"]} if os.environ.get("TETHER_LOOK") else {})}}}}
         cmd = [binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                "--include-partial-messages", "--replay-user-messages", "--permission-prompts", "host", "--permission-prompt-tool", "stdio",
-               "--mcp-config", json.dumps(mcp), "--settings", json.dumps({**({"fastMode": True} if self.fast and not self.settings.get("fast_unavailable") else {})}),
+               "--mcp-config", json.dumps(mcp), "--settings", json.dumps({**({"fastMode": True} if self.fast and not self.settings.get("fast_unavailable") else {}), **self.extra_settings}),
                "--append-system-prompt", APP_PROMPT]
         # Claude Code saves a session only once it gets a message; one that restarted before that (a model switch,
         # a context check) isn't on disk yet, and --resume would fail with "No conversation found"
         saved = self.resume and any((Path.home() / ".claude" / "projects").glob(f"*/{self.sid}.jsonl"))
-        cmd += ["--resume", self.sid] if saved else ["--session-id", self.sid]
+        if self.fork_from and not saved:
+            cmd += ["--resume", self.fork_from, "--fork-session", "--session-id", self.sid]
+        else:
+            cmd += ["--resume", self.sid] if saved else ["--session-id", self.sid]
+        if self.no_persist:
+            cmd += ["--no-session-persistence"]
         if self.perm_mode:
             cmd += ["--permission-mode", self.perm_mode]
         if self.model:
@@ -212,6 +220,7 @@ class Session:
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, bufsize=1, cwd=self.cwd, env=env)
         self.resume = True  # from now on it exists on disk
+        self.fork_from = ""
         threading.Thread(target=self._read_out, args=(self.proc,), daemon=True).start()
         threading.Thread(target=self._read_err, args=(self.proc,), daemon=True).start()
         self._send({"type": "control_request", "request_id": "init", "request": {"subtype": "initialize", "hooks": None}})
@@ -325,6 +334,10 @@ class Session:
                 self._fg.pop(tid, None)
             return
         if tid in self.jobs:
+            j = self.jobs[tid]
+            if sub == "task_started" and e.get("tool_use_id") and not j["id"]:  # first seen in the task list or a result
+                j.update(id=e["tool_use_id"], description=e.get("description") or j["description"], kind=e.get("task_type") or j["kind"])
+                self.emit({"type": "job", "sid": self.sid, **j})
             st = e.get("status") or (e.get("patch") or {}).get("status")
             if sub in ("task_notification", "task_updated") and st and st not in ("running", "pending"):
                 self._job_end(tid, st, str(e.get("summary") or ""), e.get("output_file"))
@@ -357,21 +370,40 @@ class Session:
             self.emit({"type": "agent_done", "sid": self.sid, "id": use, "status": status, "summary": str(e.get("summary") or "")[:8000],
                        "tokens": u.get("total_tokens"), "tools": u.get("tool_uses"), "ms": u.get("duration_ms")})
 
-    def _job_start(self, e: dict) -> None:
+    def _bg_list(self, tasks: list) -> None:
+        """Claude Code's list of running background tasks, sent whenever it changes. A second signal beside the
+        task_* events: a command in it that we haven't seen starts a job, and a job that drops out of it has ended."""
+        now = set()
+        for t in tasks:
+            tid = t.get("task_id")
+            if not tid or t.get("task_type") in (None, "local_agent") or t.get("subagent_type"):
+                continue
+            now.add(tid)
+            if tid not in self.jobs:
+                self._job_start({**self._fg.pop(tid, {}), **t}, "task list")
+        for j in self.running_jobs():
+            if j["task_id"] not in now and time.time() - j["started"] > 2:  # not one that started a moment ago
+                self._job_end(j["task_id"], "completed", "", None, guess=True)  # the end notice, if it comes, corrects this
+
+    def _job_start(self, e: dict, via: str = "task_started") -> None:
         tid = e.get("task_id")
-        if not tid:
+        if not tid or tid in self.jobs:
             return
+        print(f"[jobs] {self.sid[:8]} start {tid} via {via}", file=sys.stderr, flush=True)
         self.jobs[tid] = j = {"task_id": tid, "id": e.get("tool_use_id") or "", "description": e.get("description") or "Background job",
                               "kind": e.get("task_type") or "", "status": "running", "started": time.time(), "ended": None,
                               "summary": "", "exit": None, "output_file": ""}
         self.emit({"type": "job", "sid": self.sid, **j})
 
-    def _job_end(self, tid: str, status: str, summary: str = "", output_file: str | None = None) -> None:
+    def _job_end(self, tid: str, status: str, summary: str = "", output_file: str | None = None, guess: bool = False) -> None:
         j = self.jobs.get(tid)
-        if not j or (j["status"] != "running" and not summary):
+        if not j or (j["status"] != "running" and not summary and not (j.get("guess") and not guess)):
             return
-        if j["status"] == "running":
-            j["status"], j["ended"] = status, time.time()
+        if j["status"] == "running" or (j.get("guess") and not guess):  # Claude Code's own word beats our guess
+            if j["status"] == "running":
+                j["ended"] = time.time()
+                print(f"[jobs] {self.sid[:8]} end {tid} {status} via {'task list' if guess else 'task event'}", file=sys.stderr, flush=True)
+            j["status"], j["guess"] = status, guess
         j["summary"] = summary or j["summary"]
         m = re.search(r"exit code (-?\d+)", summary or "")
         if m:
@@ -511,6 +543,8 @@ class Session:
                 self.emit({"type": "compacted", "sid": sid})
             elif str(e.get("subtype", "")).startswith("task_"):
                 self._task(e)
+            elif e.get("subtype") == "background_tasks_changed":
+                self._bg_list(e.get("tasks") or [])
             elif e.get("subtype") == "status":
                 if e.get("status") == "requesting":  # a request to the model just went out; its thinking arrives only when it's done
                     self.emit({"type": "requesting", "sid": sid})
@@ -587,8 +621,15 @@ class Session:
                     self.emit({"type": "artifact_checked", "sid": sid, "id": tid, "ok": ok, "text": result_text(b)[:600]})
                     continue
                 m = re.search(r"\A[^\n]{0,120}?with ID: (\w+)\. Output is being written to: (\S+?)\.?(?:\s|$)", result_text(b).lstrip())
+                if m and m.group(1) not in self.jobs and (name == "Bash" or m.group(1) in self._fg):  # missed its start event
+                    self._job_start({**self._fg.pop(m.group(1), {}), "task_id": m.group(1), "tool_use_id": tid, "task_type": "local_bash",
+                                     "description": str(inp.get("description") or inp.get("command") or "Background job").split("\n")[0][:200]}, "tool result")
                 if m and m.group(1) in self.jobs:
-                    self.jobs[m.group(1)]["output_file"] = m.group(2)
+                    j = self.jobs[m.group(1)]
+                    j["output_file"] = m.group(2)
+                    if not j["id"]:  # first seen in the task list: now we know its row
+                        j["id"] = tid
+                        self.emit({"type": "job", "sid": sid, **j})
                 self.emit({"type": "tool_result", "sid": sid, "id": tid, "ok": ok, "output": result_text(b)[:8000],
                            **agent_stats(name, e.get("tool_use_result") or e.get("toolUseResult"))})
             return

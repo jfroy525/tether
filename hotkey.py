@@ -26,6 +26,7 @@ HOTKEYS = {
     "ctrl+alt+e": ("⌃⌥ E", 14, CONTROL | OPTION),
     "ctrl+alt+c": ("⌃⌥ C", 8, CONTROL | OPTION),
     "ctrl+alt+d": ("⌃⌥ D", 2, CONTROL | OPTION),
+    "ctrl+alt+m": ("⌃⌥ M", 46, CONTROL | OPTION),
     "f13": ("F13", F13, 0),
 }
 

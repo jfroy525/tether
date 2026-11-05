@@ -137,7 +137,7 @@ function makeSession(info) {
 function add(S, node) {
   const w = S.inner.querySelector(":scope > .working, :scope > .msg-user.queued");  // the reply streams above both
   if (!S.replaying) node.classList.add("rise");
-  if (S.playing?.size && !node.classList.contains("msg-text")) { node.classList.add("held"); (S.held ||= []).push(node); }
+  if (S.playing?.size && !node.classList.contains("msg-text")) { node.classList.add("held"); (S.paced ||= []).push(node); }  // shown when the text lands
   S.inner.insertBefore(node, w || null);
   scrollDown(S);
   return node;
@@ -149,6 +149,10 @@ function addUser(S, text, images, queued) {
     add(S, freshCard(S, { carried, from: (carried.match(/\((\w{8})\)/) || [])[1] }));
     if (!mine) return;
     text = mine;
+  }
+  if (/^\[Tether side task\]/.test(text || "")) {
+    text = text.replace(/^\[Tether side task\][^\n]*\n\n/, "");
+    add(S, el("div", "note", "Copy of the chat up to here, running separately"));
   }
   const m = el("div", "msg-user");
   if (images && (images.length || images > 0)) {
@@ -327,7 +331,7 @@ function settle(S, c) {
   c.playing = false;
   S.playing?.delete(c);
   if (c.ended || S.cur !== c) finishText(S, c);  // its block was closed while it played: draw it for good
-  if (!S.playing?.size && S.held?.length) { for (const h of S.held) h.classList.remove("held"); S.held = []; }
+  if (!S.playing?.size && S.paced?.length) { for (const h of S.paced) h.classList.remove("held"); S.paced = []; }
   scrollDown(S);
 }
 function finishText(S, c) { c.starts = c.units = c.kind = null; window.renderMarkdown(c.el, c.src); c.el.classList.remove("cursor"); hydrate(S, c.el); scrollDown(S); }
@@ -493,7 +497,7 @@ function jobEvent(S, ev, row) {
     if (j.status === "failed" && S.sid !== state.active) S.jobFailed = true;
     pollJob(S, j, true);  // its last lines
   }
-  paintJob(S, j);
+  try { paintJob(S, j); } catch (e) { console.error("job row", e); }  // the note and sidebar still update
   if (!S.replaying) { syncJobsNote(); renderSidebar(); }
 }
 function paintJob(S, j) {
@@ -542,7 +546,10 @@ setInterval(() => {  // timers every second; output every two, only for the chat
   for (const S of state.open.values()) {
     const run = jobsRunning(S);
     if (!run.length) continue;
-    for (const j of run) { paintJob(S, j); if (S.sid === state.active && jobTick % 2 === 0) pollJob(S, j); }
+    for (const j of run) {
+      try { paintJob(S, j); } catch (e) { console.error("job row", e); }
+      if (S.sid === state.active && jobTick % 2 === 0) pollJob(S, j);
+    }
   }
   syncJobsNote();
 }, 1000);
@@ -848,6 +855,10 @@ async function renderView(S, body, refresh) {
   if (!same) { viewShown.scroll = [0, 0]; viewShown.mode = "file"; }
   const r = it.src ? { type: "image", src: it.src, short: it.title } : await api().view_get(S.sid, it.path, S.viewBase || 0, S.viewN || 0);
   if (state.tab !== "view" || state.active !== S.sid || S.viewSel !== it.path) return;
+  // a redraw nobody asked for (repo refresh, reply finished) keeps the page as it is, so its own state survives
+  const key = [S.sid, it.path, r.mtime, r.size, r.shown, r.missing, viewShown.mode, !!S.commenting, S.viewN || 0,
+    document.body.classList.contains("view-full")].join("|");
+  if (!refresh && body.dataset.vwKey === key && body.querySelector(".vw-frame")?.childElementCount) { body.classList.add("view-body"); return; }
   if (!S.viewBase && r.n) S.viewBase = r.n;  // changed lines are counted from the version you first saw
   Object.assign(viewShown, { sid: S.sid, path: it.path, mtime: r.mtime || 0, size: r.size || 0, n: r.n || 0 });
   const vs = r.versions || [], old = !r.missing && S.viewN && S.viewN !== r.n;
@@ -868,6 +879,7 @@ async function renderView(S, body, refresh) {
         ? `<svg class="i" viewBox="0 0 24 24"><path d="M10 4v6H4M14 20v-6h6M10 10 4 4M14 14l6 6"/></svg>` : `<svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>`}</button>
       <button class="icb" data-vw="more" title="More"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg></button>
     </div><div class="vw-frame"></div><div class="vw-f mono"></div>`;
+  body.dataset.vwKey = key;
   body.querySelector(".vw-name .t").textContent = it.title || basename(it.path);
   body.querySelector(".vw-f").textContent = r.missing ? `${it.short || it.path} · not found` : (it.short || it.path);
   const frame = body.querySelector(".vw-frame");
@@ -884,6 +896,7 @@ async function renderView(S, body, refresh) {
     const html = await fillLibs(r.html);
     if (state.tab !== "view" || state.active !== S.sid || S.viewSel !== it.path) return;
     f.srcdoc = html + HASH_JS + NOTE_JS + `<script>addEventListener("load",()=>scrollTo(${sx},${sy}));addEventListener("scroll",()=>parent.postMessage({tetherScroll:[scrollX,scrollY]},"*"),{passive:true});<\/script>`;
+    f.addEventListener("load", () => f.classList.add("ready"), { once: true });  // fades in once drawn, never a white box first
     frame.appendChild(f); frame.classList.add("page");
   } else if (r.type === "image") {
     const im = el("img"); im.src = r.src; im.onclick = () => S.commenting || frame.classList.toggle("actual"); im.title = "Click for actual size";
@@ -1462,6 +1475,7 @@ function onEvent(ev) {
       break;
     case "text_start": if (S) { thinkDone(S); endText(S); textBlock(S); } break;
     case "text_delta": if (S) textDelta(S, ev.text); break;
+    case "sideq": if (S) SideQ.onEvent(S, ev); break;
     case "thinking_start": if (S) { endText(S); if (!(S.think?.timer && !S.think.querySelector(".body").textContent && !S.think.queue)) thinkBlock(S, "", true, true); } break;
     case "thinking_delta": if (S) { const t = S.think || thinkBlock(S, "", true, true); thinkType(S, t, ev.text); } break;
     case "tool": if (S) { thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false; addTool(S, ev, false); S.step = ev.label; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
@@ -1541,6 +1555,42 @@ function onEvent(ev) {
       break;
     }
     case "circling": state.circling = ev.on; $("#circling").hidden = !ev.on; $("#tools-btn").classList.toggle("on", ev.on); break;
+    case "screen_text": {  // Copy text from the screen: the words go in the message box, at the cursor, on their own lines
+      if (ev.error) { toast(ev.error); break; }
+      if (!state.open.get(state.active)) { toast("Open a session first, then copy the text again."); break; }
+      const t = $("#input"), a = t.selectionStart ?? t.value.length, b = t.selectionEnd ?? a, pre = t.value.slice(0, a).replace(/[ \t]+$/, "");
+      const add = (pre && !pre.endsWith("\n") ? "\n" : "") + ev.text + "\n";
+      t.value = pre + add + t.value.slice(b); t.selectionStart = t.selectionEnd = pre.length + add.length;
+      autogrow(); t.focus();
+      break;
+    }
+    case "lifted": {  // Lift a table onto the Shelf: the page opens there; its CSV waits in the message box for Claude
+      const S2 = state.open.get(state.active);
+      if (ev.error) { toast(ev.error); break; }
+      if (!S2) { toast("Open a session first, then lift it again."); break; }
+      if (ev.image) {  // no table in the box (a chart): Claude rebuilds it
+        S2.attachments.push(ev.image); renderAttachments();
+        if (!$("#input").value.trim()) { $("#input").value = "Rebuild what I boxed on screen as a Shelf page I can explore."; autogrow(); }
+        $("#input").focus(); toast("No table found there, so the picture is ready to send to Claude.");
+        break;
+      }
+      S2.attachments.push({ path: ev.csv, label: basename(ev.csv) }); renderAttachments();
+      api().view_open(S2.sid, ev.page, true, ev.title).then(async it => { await loadView(S2); openInView(S2, it.path); });
+      break;
+    }
+    case "window_marked": {  // Mark up a window: the picture and your words go to the chat in front, and Claude marks it up
+      const S2 = state.open.get(state.active);
+      if (!S2) { toast("Open a session first, then mark up a window."); api().circle_cancel(); break; }
+      const draft = $("#input").value, kept = S2.attachments.splice(0);
+      ev.images.forEach(im => S2.attachments.push(im));
+      $("#input").value = ev.text;
+      api().window_ask_sent(S2.sid);
+      send().finally(() => {
+        if (!$("#input").value) $("#input").value = draft;
+        S2.attachments.push(...kept); autogrow(); if (state.active === S2.sid) renderAttachments();
+      });
+      break;
+    }
     case "circled": {
       const S2 = state.open.get(state.active);
       if (!S2) { toast("Open a session first, then circle again."); break; }
@@ -1563,6 +1613,7 @@ function setStatus(S, ev) {
   setWorking(S, ev.status === "running" || ev.status === "starting");
   const going = st => ["running", "starting", "waiting"].includes(st);
   if (going(was) && !going(ev.status) && !S.stick) S.newReply = true;  // it finished while you were reading back
+  if (!going(ev.status)) flushHeld(S);
   if (S.sid === state.active) syncJump();
   if (ev.status === "exited" && was !== "exited") add(S, el("div", "note", "Claude Code process ended. Send a message to resume."));
   if (S.sid === state.active) { syncComposer(S); const t = document.querySelector("#bar .thread-title"); if (t && S.title && t.textContent !== S.title) t.textContent = S.title; }
@@ -1613,6 +1664,7 @@ function sessRow(s, kind) {
   else if (S) meta = `<span class="st ${status}">${STATUS_WORDS[status] || ""}</span><span>${esc(where)}</span>`;
   const nj = S ? jobsRunning(S).length : 0;
   if (nj) meta = `<span class="st job"><i class="jring"></i>${nj} ${nj === 1 ? "job" : "jobs"} running</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
+  else if (S?.sq?.ready && sid !== state.active) meta = `<span class="st sq">Side answer ready</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
   else if (S?.jobFailed) meta = `<span class="st exited">Job failed</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
   else meta = (ui.view === "repo" && kind === "recent" ? "" : `<span>${esc(where)}</span>`) + (s.branch && s.branch !== "HEAD" ? `<span>${esc(s.branch)}</span>` : "") + `<span>${ago(s.mtime)}</span>`;
   const lead = kind === "pinned" ? `<span class="pin-mark ${S ? "live " + status : "closed"}">★</span>` : `<span class="dot ${status}"></span>`;
@@ -1985,6 +2037,7 @@ function activate(sid) {
   $("#composer").hidden = !S;
   syncDock();
   syncJobsNote();
+  SideQ.show(S);
   if (!S) return;
   S.unseen = false;
   S.jobFailed = false;
@@ -2022,7 +2075,7 @@ async function reloadSession(sid) {
   if (r.error) return toast(r.error, "error");
   S.inner.innerHTML = "";
   S.el.querySelector(".stale-bar")?.remove();
-  S.tools.clear(); S.perms.clear(); S.cur = null; S.think = null; S.playing = new Set(); S.held = [];
+  S.tools.clear(); S.perms.clear(); S.cur = null; S.think = null; S.playing = new Set(); S.paced = []; S.held = [];
   dropDocked(sid);
   S.stale = false;
   if (r.title) S.title = r.title;
@@ -2199,17 +2252,100 @@ async function loadCtx() {  // the exact breakdown, fetched when the run menu op
   else if (u?.totalTokens && (!S.ctxUsage || S.ctxUsage.estimated)) { S.ctxUsage = u; showCtx(S); }
 }
 // ---------- toolbox: screen tools behind one button, so the composer stays uncluttered ----------
-function renderToolsMenu() {
-  const m = $("#tools-menu"), key = state.hotkeys?.[state.settings?.circle_key];
-  const items = [["circle", "Circle something on screen", key || ""]];
-  if (state.marksUp) items.push(["clear", "Clear Claude's marks from the screen", ""]);
-  m.innerHTML = items.map(([k, a, kbd]) => `<div class="it" data-t="${k}"><span class="a">${esc(a)}</span>${kbd ? `<span class="kbd">${esc(kbd)}</span>` : ""}</div>`).join("");
-  m.querySelectorAll("[data-t]").forEach(n => n.onclick = e => {
-    e.stopPropagation();
-    m.hidden = true;
-    if (n.dataset.t === "circle") api().start_circle();
-    else { api().clear_marks(); state.marksUp = false; }
+// The menu opens with the cursor in Find (↑↓ and Return work from there); recent tools sit on top once there are enough
+// to look through. The star on a row keeps that tool in the message box (up to 3, Settings' tool_favs).
+const TOOL_ICONS = {
+  circle: '<path d="M6 15c-2-4 1-10 7-10s8 5 6 9-8 6-11 3"/><path d="M8 17l-3 4"/>',
+  window: '<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18"/><path d="M13 16l5-5 2 2-5 5h-2z"/>',
+  text: '<path d="M4 7V5h16v2M12 5v14M9 19h6"/>',
+  lift: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  clear: '<path d="M7 21h10M5 15l8-8 5 5-6 6H8z"/>',
+};
+const TOOLS = [  // group: "Show Claude" points Claude at something; "Bring in" puts something in the message
+  { k: "circle", name: "Circle something on screen", short: "Circle", desc: "Draw on it, Claude explains", group: "Show Claude", key: "circle_key", run: () => api().start_circle() },
+  { k: "window", name: "Mark up a window", short: "Mark up", desc: "Pick a window, Claude draws on it", group: "Show Claude", key: "markup_key", run: () => api().start_circle("window") },
+  { k: "text", name: "Copy text from the screen", short: "Copy text", desc: "Drag a box, its text goes in the message", group: "Bring in", run: () => api().start_circle("text") },
+  { k: "lift", name: "Lift a table onto the Shelf", short: "Lift table", desc: "Drag over a table, sort and filter it", group: "Bring in", run: () => api().start_circle("lift") },
+];
+const toolIcon = k => `<svg viewBox="0 0 24 24">${TOOL_ICONS[k] || ""}</svg>`;
+const toolKey = t => (t.key && state.hotkeys?.[state.settings?.[t.key]]) || "";
+const STAR = '<svg viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
+const toolFavs = () => (state.settings?.tool_favs || []).filter(k => TOOLS.some(t => t.k === k));
+const toolRecent = () => JSON.parse(localStorage.getItem("wb.toolRecent") || "[]").filter(k => TOOLS.some(t => t.k === k));
+const tm = { q: "", sel: 0 };
+function useTool(k) {
+  const t = TOOLS.find(x => x.k === k);
+  $("#tools-menu").hidden = true;
+  if (k === "clear") { api().clear_marks(); state.marksUp = false; return; }
+  if (!t) return;
+  localStorage.setItem("wb.toolRecent", JSON.stringify([k, ...toolRecent().filter(x => x !== k)].slice(0, 3)));
+  t.run();
+}
+async function toggleFav(k) {
+  let favs = toolFavs();
+  if (favs.includes(k)) favs = favs.filter(x => x !== k);
+  else if (favs.length >= 3) { toast("The message box holds 3 tools. Take the star off one first."); return; }
+  else favs = [...favs, k];
+  state.settings = { ...state.settings, tool_favs: favs };  // at once, so the star and the button change together
+  renderToolFavs(); renderToolsMenu();
+  state.settings = await api().save_settings({ tool_favs: favs });
+}
+new ResizeObserver(([e]) => e.target.classList.toggle("tight", e.contentRect.width < 640)).observe(document.querySelector(".compose-tools"));
+function renderToolFavs() {
+  const box = $("#tool-favs");
+  if (!box) return;
+  const favs = toolFavs().map(k => TOOLS.find(t => t.k === k));
+  box.hidden = !favs.length;
+  box.innerHTML = favs.map(t => { const kb = toolKey(t);
+    return `<button class="tool-fav" data-k="${t.k}" title="${esc(t.name)}${kb ? " · " + esc(kb) : ""}">${toolIcon(t.k)}<span class="l">${esc(t.short)}</span></button>`; }).join("");
+  box.querySelectorAll("[data-k]").forEach(b => b.onclick = e => { e.stopPropagation(); useTool(b.dataset.k); });
+}
+function renderToolsMenu(focus) {
+  const m = $("#tools-menu"), q = tm.q.trim().toLowerCase(), favs = toolFavs();
+  const hit = t => !q || `${t.name} ${t.short} ${t.desc}`.toLowerCase().includes(q);
+  const sections = [];
+  if (state.marksUp && (!q || "clear claude's marks".includes(q))) sections.push(["", [{ k: "clear", name: "Clear Claude's marks", desc: "Take its drawings off the screen" }]]);
+  const recent = !q && TOOLS.length > 6 ? toolRecent().map(k => TOOLS.find(t => t.k === k)) : [];
+  if (recent.length) sections.push(["Recent", recent]);
+  [...new Set(TOOLS.map(t => t.group))].forEach(g => { const xs = TOOLS.filter(t => t.group === g && hit(t)); if (xs.length) sections.push([g, xs]); });
+  const rows = sections.flatMap(([, xs]) => xs);
+  tm.sel = Math.max(0, Math.min(tm.sel, rows.length - 1));
+  let n = 0;
+  const row = t => { const i = n++, kb = toolKey(t), fav = favs.includes(t.k);
+    return `<div class="it tl${i === tm.sel ? " sel" : ""}" data-t="${t.k}" data-i="${i}"><span class="tl-ic">${toolIcon(t.k)}</span>
+      <span class="tl-tx"><span class="a">${esc(t.name)}</span><span class="b">${esc(t.desc)}</span></span>
+      ${kb ? `<span class="kbd">${esc(kb)}</span>` : ""}
+      ${t.k === "clear" ? "" : `<button class="tl-star${fav ? " on" : ""}" data-star="${t.k}" title="${fav ? "Take out of the message box" : "Keep in the message box"}">${STAR}</button>`}</div>`; };
+  const body = rows.length ? sections.map(([h, xs]) => (h ? `<div class="hd">${esc(h)}</div>` : "") + xs.map(row).join("")).join("")
+    : `<div class="tl-none">No tool matches “${esc(tm.q)}”</div>`;
+  const had = m.querySelector(".tl-find input");
+  if (!had) {
+    m.innerHTML = `<div class="tl-find"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input type="text" placeholder="Find a tool" spellcheck="false"></div><div class="tl-rows"></div>`;
+    const inp = m.querySelector("input");
+    inp.oninput = () => { tm.q = inp.value; tm.sel = 0; renderToolsMenu(); };
+    inp.onkeydown = e => {
+      const count = m.querySelectorAll(".tl[data-i]").length;
+      if (e.key === "ArrowDown") { e.preventDefault(); tm.sel = Math.min(count - 1, tm.sel + 1); renderToolsMenu(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); tm.sel = Math.max(0, tm.sel - 1); renderToolsMenu(); }
+      else if (e.key === "Enter") { e.preventDefault(); const r = m.querySelector(`.tl[data-i="${tm.sel}"]`); if (r) useTool(r.dataset.t); }
+    };
+  }
+  m.querySelector(".tl-rows").innerHTML = body;
+  m.querySelector(".tl.sel")?.scrollIntoView({ block: "nearest" });
+  m.querySelectorAll(".tl[data-t]").forEach(r => {
+    r.onclick = e => { e.stopPropagation(); useTool(r.dataset.t); };
+    r.onmousemove = () => { if (tm.sel !== +r.dataset.i) { tm.sel = +r.dataset.i; m.querySelectorAll(".tl.sel").forEach(x => x.classList.remove("sel")); r.classList.add("sel"); } };
   });
+  m.querySelectorAll("[data-star]").forEach(b => b.onclick = e => { e.stopPropagation(); toggleFav(b.dataset.star); });
+  if (focus) { const inp = m.querySelector("input"); inp.value = tm.q; setTimeout(() => inp.focus(), 0); }
+}
+function openToolsMenu() {
+  const m = $("#tools-menu");
+  m.hidden = !m.hidden;
+  if (m.hidden) return;
+  tm.q = ""; tm.sel = 0; m.innerHTML = "";
+  renderToolsMenu(true);
+  api().marks_up().then(v => { state.marksUp = !!v; if (!m.hidden) renderToolsMenu(); }, () => {});
 }
 function autogrow() { const t = $("#input"); t.style.height = "auto"; t.style.height = Math.min(260, t.scrollHeight) + "px"; }
 function insertText(text) {
@@ -2271,6 +2407,8 @@ async function send() {
   const S = state.open.get(state.active);
   if (!S) return;
   const typed = $("#input").value.trim();
+  const btw = typed.match(/^\/btw(?:\s+([\s\S]*))?$/);  // Claude Code's /btw doesn't work here: Tether's side question does it
+  if (btw) { $("#input").value = ""; S.draft = ""; autogrow(); hideSlash(); SideQ.ask(S, (btw[1] || "").trim()); return; }
   if ((!typed && !S.attachments.length && !S.notes?.length) || S.sendingNotes) return;
   const files = S.attachments.filter(a => a.path).map(a => a.path);
   if (!["running", "waiting", "starting"].includes(S.status)) {
@@ -2295,12 +2433,111 @@ async function send() {
   renderAttachments();
   hideSlash();
   const busy = ["running", "waiting", "starting"].includes(S.status);
-  const m = addUser(S, text, images, busy);
+  S.lastActive = Date.now() / 1000;
+  if (busy) { holdMessage(S, text, images); renderSidebar(); return; }
+  const m = addUser(S, text, images, false);
   (S.pending ||= []).push({ text: text || (images.length ? "(see the attached image)" : ""), el: m });
   const r = await api().send(S.sid, text, images.map(({ data, media_type }) => ({ data, media_type })));
   if (r && r.error) add(S, el("div", "err", esc(r.error)));
-  S.lastActive = Date.now() / 1000;
   renderSidebar();
+}
+
+// Queued: sent while Claude is busy. Tether holds it so you can edit it, delete it, hand it to Claude now (it reads it
+// at its next step, as before), or run it separately in a copy of this chat. Held ones go in order as replies finish.
+const imgs = q => q.images.map(({ data, media_type }) => ({ data, media_type }));
+function holdMessage(S, text, images) {
+  const q = { text, images, el: addUser(S, text, images, true) };
+  (S.held ||= []).push(q);
+  queuedActions(S, q);
+}
+const Q_ICONS = {
+  edit: `<svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>`,
+  send: `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`,
+  split: `<svg class="i" viewBox="0 0 24 24"><path d="M6 4v5a4 4 0 0 0 4 4h8M14 9l4 4-4 4M6 20v-3"/></svg>`,
+  trash: `<svg class="i" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>`,
+};
+function queuedActions(S, q) {  // text first, then a footer: Queued on the left, icon buttons on the right
+  const lab = q.el.querySelector(":scope > .q-label");
+  lab.classList.add("q-foot");
+  lab.innerHTML = `<span class="qdot"></span><span class="q-state" title="Sends when Claude finishes">Queued</span><span class="q-acts"></span>`;
+  q.el.appendChild(lab);
+  const acts = lab.querySelector(".q-acts");
+  const act = (icon, tip, fn, cls = "") => { const b = el("button", "q-act " + cls, Q_ICONS[icon]); b.title = tip; b.onclick = e => { e.stopPropagation(); fn(); }; acts.appendChild(b); };
+  act("edit", "Edit", () => editQueued(S, q));
+  act("send", "Send now · Claude reads it at its next step", () => sendHeld(S, q, true));
+  act("split", "Run separately · a copy of this chat works on it now", () => runSeparately(S, q));
+  act("trash", "Delete", () => { dropHeld(S, q); q.el.remove(); }, "del");
+}
+function dropHeld(S, q) { const i = (S.held || []).indexOf(q); if (i >= 0) S.held.splice(i, 1); }
+function textOf(m) { return [...m.childNodes].find(n => n.nodeType === 3); }
+function editQueued(S, q) {
+  if (q.editing) return;
+  q.editing = true;
+  const tn = textOf(q.el) || q.el.appendChild(document.createTextNode(""));
+  const ta = el("textarea", "q-edit");
+  ta.value = q.text;
+  tn.replaceWith(ta);
+  const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + ta.offsetHeight - ta.clientHeight, 320) + "px"; };  // plus its border
+  fit(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  q.el.classList.add("editing");
+  const st = q.el.querySelector(".q-state");
+  if (st) st.textContent = "Enter saves · Esc cancels";
+  const done = save => {
+    if (!q.editing) return;
+    q.editing = false;
+    if (save && ta.value.trim()) q.text = ta.value.trim();
+    ta.replaceWith(document.createTextNode(q.text));
+    q.el.classList.remove("editing");
+    if (st) st.textContent = "Queued";
+    flushHeld(S);  // Claude may have finished while you were editing
+  };
+  ta.oninput = fit;
+  ta.onkeydown = e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); done(true); $("#input").focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); $("#input").focus(); }
+  };
+  ta.onblur = () => done(true);
+}
+function sendHeld(S, q, now) {
+  dropHeld(S, q);
+  if (q.editing) { q.editing = false; const ta = q.el.querySelector(".q-edit"); if (ta) { if (ta.value.trim()) q.text = ta.value.trim(); ta.replaceWith(document.createTextNode(q.text)); } q.el.classList.remove("editing"); }
+  let m = q.el;
+  if (now) {  // it moves into the conversation once Claude reads it (see delivered)
+    m.querySelector(":scope > .q-label").innerHTML = `<span class="qdot"></span><span class="q-state" title="Claude reads it at its next step">Sent</span>`;
+  } else {  // the reply finished: it goes in now, like a message you just sent
+    q.el.remove();
+    m = addUser(S, q.text, q.images, false);
+    S.status = "running";  // until Claude says so, so a message you send next waits behind this one
+  }
+  (S.pending ||= []).push({ text: q.text || (q.images.length ? "(see the attached image)" : ""), el: m });
+  api().send(S.sid, q.text, imgs(q)).then(r => { if (r && r.error) add(S, el("div", "err", esc(r.error))); });
+}
+function flushHeld(S) {
+  if (["running", "waiting", "starting"].includes(S.status)) return;
+  const q = S.held?.[0];
+  if (q && !q.editing) sendHeld(S, q, false);
+}
+async function runSeparately(S, q) {
+  dropHeld(S, q);
+  const lab = q.el.querySelector(":scope > .q-label");
+  lab.innerHTML = `<span class="qdot"></span><span class="q-state">Starting a separate chat…</span>`;
+  const r = await api().fork_session(S.sid, q.text, imgs(q));
+  if (!r || r.error) {  // back in the queue as it was
+    toast((r && r.error) || "Couldn't start a separate chat.", "error");
+    (S.held ||= []).unshift(q); queuedActions(S, q); flushHeld(S);
+    return;
+  }
+  const N = makeSession({ ...r, items: [] });
+  N.title = r.title;
+  setStatus(N, { status: r.status });
+  renderItems(N, r.items || []);
+  if (r.parts?.length) olderPartButton(N, r.parts);
+  add(N, el("div", "note", "Copy of the chat up to here, running separately"));
+  addUser(N, q.text, q.images, false);
+  const line = el("div", "note", `Running separately in a copy of this chat · <span class="lnk">Open it</span>`);
+  line.querySelector(".lnk").onclick = () => state.open.has(N.sid) ? activate(N.sid) : openSession(N.sid, N.cwd, N.title);
+  q.el.replaceWith(line);
+  renderSidebar(); loadHistory();
 }
 
 // slash commands
@@ -2745,6 +2982,10 @@ function setTone(el, pick, kind) {
     return;
   }
   const { tone, alpha } = pick, g = state.glass, rgba = (c, a) => `rgba(${c.join(", ")}, ${a.toFixed(3)})`;
+  if (el.dataset.tone && el.dataset.tone !== tone) {  // a swap of light and dark: let it ease across (.tone-shift)
+    el.classList.add("tone-shift"); clearTimeout(el._toneShift);
+    el._toneShift = setTimeout(() => el.classList.remove("tone-shift"), 1300);
+  }
   el.classList.toggle("tone-light", tone === "light"); el.classList.toggle("tone-dark", tone === "dark");
   el.dataset.tone = tone;
   st.setProperty("--page", rgba(GLASS[tone].page, g.a));
@@ -2757,7 +2998,7 @@ function setTone(el, pick, kind) {
 setInterval(() => { if (!document.hidden) adaptGlass(); }, 1200);
 // Settings › Appearance › Accent color: one picked color becomes the five accent tokens, shaded per theme so
 // accent text keeps 4.5:1 on the page and button labels keep 4.5:1 on the fill. "" = the theme's own teal.
-const ACCENT_KEYS = ["--accent", "--accent-fill", "--accent-hover", "--on-accent", "--accent-soft", "--accent-line"];
+const ACCENT_KEYS = ["--accent", "--accent-fill", "--accent-hover", "--on-accent", "--accent-soft", "--accent-line", "--hl-c"];
 function applyAccent(hex) {
   const b = document.body.style, v = accentVars(hex, document.body.classList.contains("dark"));
   ACCENT_KEYS.forEach(k => v ? b.setProperty(k, v[k]) : b.removeProperty(k));
@@ -2780,6 +3021,7 @@ function accentVars(hex, dark) {
   return {
     "--accent": css(text), "--accent-fill": css(fill), "--accent-hover": css(mix(fill, label === WHITE ? BLACK : WHITE, 0.14)),
     "--on-accent": css(label), "--accent-soft": alpha(text, dark ? 0.12 : 0.09), "--accent-line": alpha(text, dark ? 0.45 : 0.42),
+    "--hl-c": css(text),
   };
 }
 // Only follow the system when the theme is set to follow it. Setting the window's own appearance (set_look) fires this
@@ -2918,7 +3160,7 @@ function freshStart(ev) {
   N.title = ev.title;
   if (old) {
     [...old.inner.childNodes].filter(n => !n.classList?.contains("working")).forEach(n => N.inner.appendChild(n));
-    N.draft = old.draft; N.ctxUsage = null;
+    N.draft = old.draft; N.ctxUsage = null; N.held = old.held; old.paced?.forEach(h => h.classList.remove("held"));  // rows still waiting on old text: show them
     old.el.remove(); clearInterval(old.timer); state.open.delete(ev.old);
   }
   (state.moved ||= {})[ev.old] = N.sid;
@@ -3106,11 +3348,13 @@ async function settingsDialog() {
       + row("Text size", `<select data-k="text_size">${opts(TEXT_SIZES.map(v => [String(v), v === 100 ? "100% (default)" : v + "%"]), String(s.text_size ?? 100))}</select>`, "Every font in the window. ⌘+ and ⌘− step it, ⌘0 resets")
       + row("Color bold words", sw("bold_accent", s.bold_accent !== false), "Bold words in Claude's replies take the accent color, so the key points stand out. Links get an underline to stay distinct")
       + row("Reply animation", `<select data-k="reply_anim">${opts([["blur", "Blur in"], ["scan", "Scan line"], ["pop", "Pop through"], ["off", "Off"]], s.reply_anim || "blur")}</select>`, "How a reply lands: words come into focus, a glowing bar sweeps each line, or letters pop up through the glass, hang in the air and settle. Either way the whole reply is in within about a second and the chat glides with it. Your Mac's Reduce motion setting turns it off")
+      + row("Text highlight", `<select data-k="select_anim">${opts([["glow", "Glow"], ["liquid", "Liquid"], ["marker", "Highlighter"], ["off", "No motion"]], s.select_anim || "glow")}</select>`, "When you select text: it glows as you let go, the highlight glides after your pointer, or the color paints across each line")
       + row("While Claude works", `<select data-k="working_anim">${opts([["mix", "A different one each time"], ["runner", "Runner"], ["ninja", "Ninja"], ["dragon", "Dragon"], ["soccer", "Soccer player"], ["snake", "Snake"], ["wizard", "Wizard"], ["dot", "Simple dot"]], s.working_anim)}</select>`, "The animation on the working line. Your Mac's Reduce motion setting turns it off"))}
     ${sec("Voice", row("Hold to talk", `<select data-k="voice_key">${keys(s.voice_key)}</select>`, "Works from any app")
       + row("Microphone", `<select data-k="mic">${opts([["", "System default"], ...mics.map(m => [m, m])], s.mic)}</select>`)
       + row("Send when you stop talking", sw("auto_send_dictation", s.auto_send_dictation)))}
     ${sec("Screen", row("Circle to explain", `<select data-k="circle_key">${keys(s.circle_key)}</select>`)
+      + row("Mark up a window", `<select data-k="markup_key">${keys(s.markup_key || "ctrl+alt+m")}</select>`)
       + row("Keep Claude's marks for", `<select data-k="mark_linger">${opts([["10", "10 seconds"], ["30", "30 seconds"], ["60", "1 minute"], ["300", "5 minutes"], ["0", "Until my next message"]], String(s.mark_linger))}</select>`))}
     ${sec("Shelf", row("Show items from", `<select data-k="shelf_hours">${opts([["24", "The last day"], ["72", "The last 3 days"], ["168", "The last week"], ["0", "The whole chat"]], String(s.shelf_hours ?? 24))}</select>`, "Older ones wait under Earlier in the Shelf's item menu"))}
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
@@ -3160,6 +3404,7 @@ async function settingsDialog() {
     if (out.perm_mode === "bypassPermissions" && s.perm_mode !== out.perm_mode &&  // the confirm replaces this dialog, so values are read first
         !await confirmBox("Bypass permissions for every session?", "Every new or reopened session will run commands and edit files without asking. Commits, pushes and deploys still ask.", "Bypass")) delete out.perm_mode;
     state.settings = await api().save_settings(out);
+    renderToolFavs();  // a new shortcut shows on the buttons' hover text
     applyTheme(state.settings.theme);
     showKeys();
     closeModal();
@@ -3225,7 +3470,9 @@ function wire() {
   };
   document.addEventListener("mousedown", e => { if (!pk.hidden && !pk.contains(e.target) && !e.target.closest("a.path, .tool .row, img, .att")) closePeek(); });
   // the header and the top of the sidebar are the title bar: drag to move, double-click to zoom
-  document.querySelectorAll(".pywebview-drag-region").forEach(n => n.addEventListener("dblclick", e => { if (e.target === n) api().zoom(); }));
+  // (the Shelf's top bar is drawn later, so both listen on the whole page; Python moves the window, across displays)
+  document.addEventListener("mousedown", e => { if (e.button === 0 && e.detail === 1 && e.target.classList?.contains("pywebview-drag-region")) api().drag_window(); });
+  document.addEventListener("dblclick", e => { if (e.target.classList?.contains("pywebview-drag-region")) api().zoom(); });
   // files dragged over the window: a drop zone; the drop itself is handled in Python, which knows the paths
   let dragDepth = 0;
   const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
@@ -3247,7 +3494,7 @@ function wire() {
   renderMiniBar();
   document.querySelectorAll("#view-seg button").forEach(b => { b.title = `${VIEWS[b.dataset.v].text} (⌘D)`; b.onclick = () => setView(b.dataset.v); });
   $("#run-btn").onclick = e => { e.stopPropagation(); const m = $("#run-menu"); m.hidden = !m.hidden; if (!m.hidden) { renderRunMenu(); loadCtx(); } };
-  $("#tools-btn").onclick = e => { e.stopPropagation(); const m = $("#tools-menu"); m.hidden = !m.hidden; if (!m.hidden) { renderToolsMenu(); api().marks_up().then(v => { state.marksUp = !!v; if (!m.hidden) renderToolsMenu(); }, () => {}); } };
+  $("#tools-btn").onclick = e => { e.stopPropagation(); openToolsMenu(); };
   $("#mode-sel").onchange = e => { const S = state.open.get(state.active); if (S) setMode(S, e.target.value); };
   $("#fast-btn").onclick = () => {
     const S = state.open.get(state.active);
@@ -3263,6 +3510,7 @@ function wire() {
   $("#stop-btn").onclick = () => api().interrupt(state.active);
   $("#mic-btn").onclick = () => api().mic(!state.dictating);
   $("#file-btn").onclick = attachFiles;
+  $("#sq-btn").onclick = () => { const S = state.open.get(state.active); if (S) SideQ.toggle(S); };
   $("#model-sel").onchange = $("#effort-sel").onchange = () => {
     const S = state.open.get(state.active);
     if (!S) return;
@@ -3329,6 +3577,7 @@ function wire() {
     const S = state.open.get(state.active);
     if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "m") { e.preventDefault(); return setMini(); }
     if (e.metaKey && ["\\", "j", "i"].includes(e.key) && document.body.classList.contains("mini")) setMini(false);  // the panel needs the full window
+    if (e.metaKey && e.key === "/") { e.preventDefault(); if (S) SideQ.toggle(S); return; }
     if (e.metaKey && e.key === "n") { e.preventDefault(); newSessionDialog(); }
     else if (e.metaKey && e.key === "k") { e.preventDefault(); $("#palette").hidden ? openPalette() : closePalette(); }
     else if (e.metaKey && e.key === "\\") { e.preventDefault(); openPanelButton(); }
@@ -3418,6 +3667,7 @@ async function reopenAfterUpdate() {
 window.addEventListener("pywebviewready", async () => {
   const r = await api().ready();
   state.settings = r.settings; state.hotkeys = r.hotkeys; state.home = r.home;
+  renderToolFavs();
   wire();
   applyTheme(r.settings.theme);
   applyText(r.settings.text_size, r.settings.bold_accent);

@@ -26,12 +26,84 @@
   #bar button:disabled { opacity: .4; cursor: default; }
   #bar .go { background: #ffd23f; border-color: #ffd23f; color: #1a1405; font-weight: 600; }
   g.mark.gone { opacity: 0; }
+  /* Copy text from the screen: drag a box; the rest of the screen dims around it */
+  #gbar { position: fixed; top: 44px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 6px;
+          padding: 6px 6px 6px 16px; border-radius: 22px; background: rgba(20, 22, 26, .94); border: 1px solid rgba(255,255,255,.12);
+          box-shadow: 0 12px 34px rgba(0,0,0,.45); font: 500 14px -apple-system, "SF Pro Text", sans-serif; color: #f2f3f5; cursor: default; }
+  #gbar span { margin-right: 8px; white-space: nowrap; }
+  #gbar button { font: inherit; font-size: 13px; height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid rgba(255,255,255,.14);
+                 background: none; color: #c9cdd2; cursor: pointer; }
+  body.grab { cursor: crosshair; }
+  body.grab #bar { display: none; }
+  body.grab #gbar { display: flex; }
+  body.grab.dragging #gbar { opacity: 0; pointer-events: none; }
+  .gbox { fill: none; stroke: #5b9dff; stroke-width: 2; }
+  /* Mark up a window: the window under the pointer glows; click it and a prompt box springs out of it */
+  #pk { position: fixed; inset: 0; display: none; }
+  body.pick #pk { display: block; }
+  #pk .glowbox { position: fixed; border-radius: 12px; pointer-events: none; opacity: 0;
+    box-shadow: 0 0 0 2px #6CCDE3, 0 0 0 6px rgba(108,205,227,.22), 0 0 40px rgba(108,205,227,.35), 0 0 0 9999px rgba(0,0,0,.3);
+    transition: left .22s cubic-bezier(.2,.8,.2,1), top .22s cubic-bezier(.2,.8,.2,1), width .22s cubic-bezier(.2,.8,.2,1),
+                height .22s cubic-bezier(.2,.8,.2,1), opacity .2s, box-shadow .3s; }
+  #pk .glowbox.on { opacity: 1; }
+  #pk.asked .glowbox { box-shadow: 0 0 0 2px #6CCDE3, 0 0 0 6px rgba(108,205,227,.22), 0 0 40px rgba(108,205,227,.35), 0 0 0 9999px rgba(0,0,0,0); }
+  #pk.sent .glowbox { opacity: 0; }
+  #pk .wtag { position: absolute; left: 10px; top: -32px; background: rgba(20,24,30,.92); border: 1px solid rgba(108,205,227,.4);
+    border-radius: 8px; padding: 5px 10px; font: 500 13px -apple-system, "SF Pro Text", sans-serif; color: #dff6fb; white-space: nowrap;
+    max-width: 520px; overflow: hidden; text-overflow: ellipsis; }
+  #pk .wtag.in { top: 10px; }
+  #pk .dimall { position: fixed; inset: 0; background: rgba(0,0,0,.2); transition: opacity .2s; }
+  #pk.lit .dimall, #pk.asked .dimall, #pk.sent .dimall { opacity: 0; }
+  #pbar { position: fixed; top: 44px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+    padding: 6px 6px 6px 16px; border-radius: 22px; background: rgba(20, 22, 26, .94); border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 12px 34px rgba(0,0,0,.45); font: 500 14px -apple-system, "SF Pro Text", sans-serif; color: #f2f3f5; cursor: default; }
+  #pbar span { margin-right: 8px; white-space: nowrap; }
+  #pbar button { font: inherit; font-size: 13px; height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid rgba(255,255,255,.14);
+    background: none; color: #c9cdd2; cursor: pointer; }
+  #pk.asked #pbar, #pk.sent #pbar { display: none; }
+  #pask { position: fixed; width: 420px; border-radius: 14px; padding: 12px; color: #eef2f4;
+    background: rgba(24,28,34,.96); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(108,205,227,.35); box-shadow: 0 20px 60px rgba(0,0,0,.5); font: 13px -apple-system, "SF Pro Text", sans-serif;
+    transform-origin: var(--ox, 50%) var(--oy, 0); transform: scale(.6) translateY(-6px); opacity: 0; pointer-events: none;
+    transition: transform .38s cubic-bezier(.2,1.3,.3,1), opacity .2s, width .3s, padding .3s; }
+  #pk.asked #pask, #pk.sent #pask { transform: none; opacity: 1; pointer-events: auto; }
+  #pask .who { font-size: 12px; color: #8fdcec; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pask .who i { width: 8px; height: 8px; border-radius: 50%; background: #6CCDE3; flex: none; }
+  #pask textarea { width: 100%; box-sizing: border-box; height: 64px; resize: none; background: #14171c; color: #eef2f4;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 9px; padding: 8px 10px; font: inherit; outline: none; }
+  #pask textarea:focus { border-color: rgba(108,205,227,.55); }
+  #pask .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+  #pask .chips button { background: none; border: 1px solid rgba(255,255,255,.14); color: #cfd8dd; border-radius: 7px; padding: 3px 8px;
+    font: inherit; font-size: 12px; cursor: pointer; }
+  #pask .chips button:hover { border-color: #6CCDE3; color: #fff; }
+  #pask .row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11.5px; color: #8d979f; }
+  #pask .row div { display: flex; gap: 6px; }
+  #pask .row button { font: inherit; font-size: 12.5px; border-radius: 8px; padding: 6px 12px; cursor: pointer;
+    background: none; border: 1px solid rgba(255,255,255,.14); color: #c9cdd2; }
+  #pask .row .send { background: #0B6E86; border-color: #0B6E86; color: #fff; font-weight: 600; }
+  #pask .think { display: none; align-items: center; gap: 8px; color: #bfe9f2; font-size: 13px; padding: 2px; }
+  #pk.sent #pask { width: 250px; padding: 9px 12px; pointer-events: none; }
+  #pk.sent #pask .who, #pk.sent #pask textarea, #pk.sent #pask .chips, #pk.sent #pask .row { display: none; }
+  #pk.sent #pask .think { display: flex; }
+  #pk.bye #pask { opacity: 0; transform: scale(.9); }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(108,205,227,.25); border-top-color: #6CCDE3;
+    animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <svg id="s"></svg>
 <div id="bar"><span>Draw on anything you want explained</span>
   <button class="undo">Undo</button><button class="cancel">Cancel</button><button class="go">Explain</button></div>
+<div id="gbar"><span>Drag over the text you want</span><button class="cancel">Cancel</button></div>
+<div id="pk"><div class="dimall"></div><div class="glowbox"><div class="wtag"></div></div>
+  <div id="pbar"><span>Click a window to mark it up</span><button class="cancel">Cancel</button></div>
+  <div id="pask"><div class="who"><i></i><span></span></div>
+    <textarea placeholder="What should Claude mark?"></textarea>
+    <div class="chips"><button>Circle anything odd</button><button data-more>Number the steps to </button><button>Explain each part</button></div>
+    <div class="row"><span>Return to send · Esc to close</span><div><button class="cancel">Cancel</button><button class="send">Mark it up</button></div></div>
+    <div class="think"><span class="spin"></span><span>Claude is looking at this window…</span></div></div></div>
 <script>
 const NS = "http://www.w3.org/2000/svg";
 const COLORS = { red: "#ff4d4d", yellow: "#ffd23f", green: "#3ecf8e", blue: "#5b9dff", orange: "#ff9233",
@@ -153,6 +225,7 @@ function note(g, text, x, y, wrap, color, delay) {  // a card of wrapped text
 }
 
 window.draw = marks => {  // they stay until clearMarks(): the app times it
+  pickGone();
   clearNow();
   const many = marks.length > 8, gap = many ? 90 : 260, speed = many ? .6 : 1;
   let at = 120;
@@ -201,10 +274,70 @@ window.draw = marks => {  // they stay until clearMarks(): the app times it
   }
 };
 
+
+// ---- mark up a window: Tether follows the pointer and sends the window under it (pickHover); a click opens the prompt box
+let pickOn = false, pickIdx = 0, pickRect = null;
+const pk = document.getElementById("pk"), pglow = pk.querySelector(".glowbox"), ptag = pk.querySelector(".wtag"),
+      pask = document.getElementById("pask"), pta = pask.querySelector("textarea");
+window.pick = (on, i) => {
+  pickOn = on; pickIdx = i || 0; pickRect = null;
+  pk.className = ""; pglow.classList.remove("on"); pta.value = "";
+  document.body.classList.toggle("pick", on);
+};
+window.pickHover = r => {
+  if (!pickOn || pk.classList.contains("asked")) return;
+  pickRect = r;
+  pk.classList.toggle("lit", !!r);
+  if (!r) { pglow.classList.remove("on"); return; }
+  Object.assign(pglow.style, { left: r.x - 3 + "px", top: r.y - 3 + "px", width: r.w + 6 + "px", height: r.h + 6 + "px" });
+  ptag.textContent = r.name; ptag.classList.toggle("in", r.y < 40);
+  pglow.classList.add("on");
+};
+const cancelPick = () => { if (pickOn) { window.pick(false); window.pywebview.api.circle_cancel(); } };
+pk.querySelectorAll(".cancel").forEach(b => b.onclick = e => { e.stopPropagation(); cancelPick(); });
+pk.addEventListener("click", async e => {
+  if (!pickOn || pk.classList.contains("asked") || e.target.closest("#pbar") || !pickRect) return;
+  const r = pickRect;
+  if (!(await window.pywebview.api.window_pick(pickIdx))) return;
+  pk.classList.add("asked");
+  pask.querySelector(".who span").textContent = r.name;
+  // just below the window if there's room, else inside its bottom edge; always on this screen
+  const W = innerWidth, H = innerHeight, bw = 420, bh = 160;
+  const cx = Math.min(Math.max(r.x + r.w / 2, 40), W - 40);
+  const left = Math.min(Math.max(cx - bw / 2, 12), W - bw - 12);
+  let top = r.y + r.h + 14;
+  if (top + bh > H - 12) top = Math.min(r.y + r.h, H) - bh - 16;
+  top = Math.max(12, top);
+  pask.style.left = left + "px"; pask.style.top = top + "px";
+  pask.style.setProperty("--ox", cx - left + "px"); pask.style.setProperty("--oy", top > r.y + r.h ? "-24px" : "100%");
+  setTimeout(() => pta.focus(), 60);
+});
+pask.querySelectorAll(".chips button").forEach(b => b.onclick = e => {
+  e.stopPropagation();
+  if (b.dataset.more) { pta.value = b.textContent; pta.focus(); pta.selectionStart = pta.selectionEnd = pta.value.length; return; }
+  pta.value = b.textContent; sendPick();
+});
+function sendPick() {
+  if (!pickOn || !pk.classList.contains("asked") || pk.classList.contains("sent")) return;
+  pk.classList.add("sent");
+  window.pywebview.api.window_ask(pickIdx, pta.value);
+}
+pask.querySelector(".send").onclick = e => { e.stopPropagation(); sendPick(); };
+pta.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); sendPick(); }
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelPick(); }
+});
+function pickGone() {  // Claude's marks are drawing, or it answered without any: the pill fades out
+  if (!pickOn) return;
+  pk.classList.add("bye"); pickOn = false;
+  setTimeout(() => { if (!pickOn) window.pick(false); }, 260);
+}
 // ---- draw to ask: the user draws on the screen freehand (as many strokes as they like), then Explain
 let lassoOn = false, lassoIdx = 0, drawing = false, strokes = [], cur = null;
 const bar = document.getElementById("bar");
 window.lasso = (on, i) => {
+  if (pickOn) window.pick(false);
+  if (!on && grabOn) endGrab();
   clearNow(); lassoOn = on; lassoIdx = i || 0; drawing = false; strokes = [];
   document.body.classList.toggle("lasso", on);
   if (on) el("rect", { class: "dim", x: 0, y: 0, width: "100%", height: "100%" }, svg);
@@ -221,10 +354,47 @@ window.finishLasso = () => {  // Explain (the button, or Return in the app)
   endLasso();
   window.pywebview.api.circle_done(lassoIdx, all);
 };
-window.cancelLasso = () => { if (lassoOn) { endLasso(); clearNow(); window.pywebview.api.circle_cancel(); } };
+window.cancelLasso = () => { if (lassoOn) { endLasso(); clearNow(); window.pywebview.api.circle_cancel(); } else if (grabOn) cancelGrab(); else if (pickOn && !pk.classList.contains("sent")) cancelPick(); };
 bar.querySelector(".go").onclick = finishLasso;
 bar.querySelector(".cancel").onclick = cancelLasso;
 bar.querySelector(".undo").onclick = () => { const s = strokes.pop(); if (s) s.g.remove(); syncBar(); };
+// ---- copy text from the screen: drag a box, and on release its text goes to the message box
+let grabOn = false, grabIdx = 0, g0 = null, gEls = null;
+window.grab = (on, i, hint) => {
+  if (pickOn) window.pick(false);
+  clearNow(); grabOn = on; grabIdx = i || 0; g0 = null;
+  if (hint) document.querySelector("#gbar span").textContent = hint;
+  document.body.classList.toggle("grab", on); document.body.classList.remove("dragging");
+  if (!on) return;
+  // the dim is a path with the box cut out (even-odd), so the box shows the screen at full strength
+  gEls = { dim: el("path", { class: "dim", "fill-rule": "evenodd", d: dimPath() }, svg), box: el("rect", { class: "gbox", rx: 4, width: 0, height: 0 }, svg) };
+};
+function dimPath(x, y, w, h) {
+  const W = innerWidth, H = innerHeight, outer = `M0 0H${W}V${H}H0Z`;
+  return w ? `${outer}M${x} ${y}h${w}v${h}h${-w}Z` : outer;
+}
+function endGrab() { grabOn = false; g0 = null; document.body.classList.remove("grab", "dragging"); clearNow(); }
+const cancelGrab = () => { if (grabOn) { endGrab(); window.pywebview.api.circle_cancel(); } };
+document.querySelector("#gbar .cancel").onclick = cancelGrab;
+const gRect = e => { const x = Math.min(g0[0], e.clientX), y = Math.min(g0[1], e.clientY); return [x, y, Math.abs(e.clientX - g0[0]), Math.abs(e.clientY - g0[1])]; };
+addEventListener("mousedown", e => {
+  if (!grabOn || e.button !== 0 || e.target.closest("#gbar")) return;
+  g0 = [e.clientX, e.clientY]; document.body.classList.add("dragging");
+});
+addEventListener("mousemove", e => {
+  if (!grabOn || !g0) return;
+  const [x, y, w, h] = gRect(e);
+  Object.entries({ x, y, width: w, height: h }).forEach(([k, v]) => gEls.box.setAttribute(k, v));
+  gEls.dim.setAttribute("d", dimPath(x, y, w, h));
+});
+addEventListener("mouseup", e => {
+  if (!grabOn || !g0 || e.button !== 0) return;
+  const r = gRect(e);
+  if (r[2] < 6 || r[3] < 6) { window.grab(true, grabIdx); return; }  // a click, not a box: start again
+  const i = grabIdx; endGrab();
+  window.pywebview.api.text_done(i, r);
+});
+
 addEventListener("mousedown", e => {
   if (!lassoOn || e.button !== 0 || e.target.closest("#bar")) return;
   drawing = true;
@@ -243,9 +413,9 @@ addEventListener("mouseup", e => {
   if (!drawing || e.button !== 0) return;
   drawing = false; strokes.push(cur); cur = null; syncBar();
 });
-addEventListener("contextmenu", e => { e.preventDefault(); cancelLasso(); });
+addEventListener("contextmenu", e => { e.preventDefault(); cancelLasso(); cancelGrab(); if (pickOn && !pk.classList.contains("sent")) cancelPick(); });
 addEventListener("keydown", e => {
-  if (e.key === "Escape") cancelLasso();
+  if (e.key === "Escape") { cancelLasso(); cancelGrab(); if (pickOn && !pk.classList.contains("sent")) cancelPick(); }
   if (e.key === "Enter") finishLasso();
 });
 
@@ -254,7 +424,7 @@ function fadeOut() {
   setTimeout(clearNow, 700);
 }
 function clearNow() { svg.innerHTML = ""; }
-window.clearMarks = fadeOut;
+window.clearMarks = () => { pickGone(); fadeOut(); };
 </script>
 </body>
 </html>

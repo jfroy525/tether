@@ -134,6 +134,49 @@ def list_windows() -> list[dict]:
     return out
 
 
+def window_stack() -> list[dict]:
+    """Windows on screen now, front to back, for Mark up a window: the pointer lights up the first one it's over.
+    Tether's own windows are kept as `ours`, so pointing at Tether lights nothing up instead of what's behind it."""
+    import Quartz
+    ours, out = _app_pids(), []
+    opts = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+    for w in Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID) or []:
+        b = w.get("kCGWindowBounds") or {}
+        owner = str(w.get("kCGWindowOwnerName") or "")
+        if w.get("kCGWindowLayer", 0) != 0 or float(w.get("kCGWindowAlpha", 1)) == 0:
+            continue
+        mine = w.get("kCGWindowOwnerPID") in ours
+        if not mine and (owner in NOT_WINDOWS or b.get("Width", 0) < 160 or b.get("Height", 0) < 100):
+            continue
+        out.append({"id": int(w["kCGWindowNumber"]), "app": owner, "title": str(w.get("kCGWindowName") or "").strip(),
+                    "pid": int(w.get("kCGWindowOwnerPID") or 0), "ours": mine,
+                    "x": float(b["X"]), "y": float(b["Y"]), "w": float(b["Width"]), "h": float(b["Height"])})
+    return out
+
+
+def capture_picked(win: dict) -> tuple[bool, str, list[dict]]:
+    """Mark up a window: a picture of just the window the user clicked, kept as the marks' reference."""
+    if not allowed():
+        return False, PERMISSION_HELP, []
+    folder = Path(tempfile.gettempdir()) / "workbench-screen"
+    folder.mkdir(exist_ok=True)
+    for old in folder.glob("*"):
+        old.unlink(missing_ok=True)
+    got = _shot(["screencapture", "-x", "-o", f"-l{win['id']}"], folder)
+    if not got:
+        return False, "Couldn't take a picture of that window.", []
+    now = next((w for w in list_windows() if w["id"] == win["id"]), None)  # it may have moved or come forward
+    w = now or win
+    covered = bool(now and now.get("covered"))
+    part = {"kind": "window", "app": w["app"], "title": w["title"], "markable": not covered,
+            "label": f"the {w['app']} window" + (f" “{w['title'][:80]}”" if w["title"] else ""),
+            "screen": display_for(w["x"] + w["w"] / 2, w["y"] + w["h"] / 2)["n"],
+            "x": w["x"], "y": w["y"], "w": w["w"], "h": w["h"], "path": got[0], "img_w": got[1], "img_h": got[2]}
+    LAST.parent.mkdir(parents=True, exist_ok=True)
+    LAST.write_text(json.dumps({"parts": [{k: v for k, v in part.items() if k != "path"}], "at": time.time()}))
+    return True, "", [part]
+
+
 def find_windows(query: str) -> list[dict]:
     """Windows matching an id from list_windows, an app name, or words from a title, best first. Apps keep
     hidden helper windows titled with the app's name, so among equal matches the bigger window wins."""
@@ -362,3 +405,93 @@ def place_marks(marks: list) -> list[tuple[dict, list]]:
 def main_display_height() -> float:
     return next((d["h"] for d in displays() if d["main"]), 0.0)
 
+
+
+def read_text(screen_n: int, region: dict) -> tuple[str, str]:
+    """Copy text from the screen: the words inside `region` (global points) on screen `screen_n`, read by the
+    Mac's own text recognition (Vision, on this Mac; nothing is sent anywhere). Returns (text, error)."""
+    png, err = capture_region(screen_n, region)
+    if not png:
+        return "", err
+    try:
+        return _ocr(png), ""
+    finally:
+        png.unlink(missing_ok=True)
+
+
+_VISION: dict = {}
+
+
+def _ocr(path: Path) -> str:
+    """Lines top to bottom, words on one line left to right; a blank line where the gap is wider than a line."""
+    boxes = ocr_boxes(path)
+    if not boxes:
+        return ""
+    rows = ocr_rows(boxes)
+    out, last_bottom = [], None
+    for row in rows:
+        t, h = row[0]["t"], max(b["h"] for b in row)
+        if last_bottom is not None and t - last_bottom > h * 1.1:
+            out.append("")
+        out.append("  ".join(b["s"] for b in row) if len(row) > 1 else row[0]["s"])
+        last_bottom = t + h
+    return "\n".join(out).strip()
+
+
+def ocr_rows(boxes: list[dict]) -> list[list[dict]]:
+    """Pieces of text grouped into rows (same row if it starts within half a line), each left to right."""
+    rows: list[list[dict]] = []
+    for b in sorted(boxes, key=lambda b: (b["t"], b["x"])):
+        if rows and abs(b["t"] - rows[-1][0]["t"]) < rows[-1][0]["h"] / 2:
+            rows[-1].append(b)
+        else:
+            rows.append([b])
+    for row in rows:
+        row.sort(key=lambda b: b["x"])
+    return rows
+
+
+def ocr_boxes(path: Path, roi: tuple[float, float, float, float] | None = None) -> list[dict]:
+    """Each piece of text the Mac finds: t (top), h, x, w as 0-1 of the picture, s the text.
+    roi (x, top, w, h as 0-1) reads only that part; positions still come back as parts of the whole picture."""
+    import objc
+    from Foundation import NSURL
+    if not _VISION:  # the framework itself, so no extra package is needed
+        objc.loadBundle("Vision", _VISION, bundle_path="/System/Library/Frameworks/Vision.framework")
+    req = _VISION["VNRecognizeTextRequest"].alloc().init()
+    req.setRecognitionLevel_(0)  # accurate
+    req.setUsesLanguageCorrection_(True)
+    if roi:
+        rx, rt, rw, rh = roi
+        req.setRegionOfInterest_(((rx, 1 - rt - rh), (rw, rh)))  # Vision's origin is the bottom left
+    handler = _VISION["VNImageRequestHandler"].alloc().initWithURL_options_(NSURL.fileURLWithPath_(str(path)), {})
+    handler.performRequests_error_([req], None)
+    boxes = []
+    for o in req.results() or []:
+        top = o.topCandidates_(1)
+        if not top:
+            continue
+        b = o.boundingBox()  # 0-1 of the region read, origin at the bottom left
+        x, y, w, h = b.origin.x, b.origin.y, b.size.width, b.size.height
+        if roi:
+            x, w = rx + x * rw, w * rw
+            y, h = (1 - rt - rh) + y * rh, h * rh
+        boxes.append({"t": 1 - (y + h), "h": h, "x": x, "w": w, "s": str(top[0].string())})
+    return boxes
+
+
+def capture_region(screen_n: int, region: dict) -> tuple[Path | None, str]:
+    """A full-resolution PNG of `region` (global points) on screen `screen_n`; the caller deletes it."""
+    if not allowed():
+        return None, PERMISSION_HELP
+    d = next((x for x in displays() if x["n"] == screen_n), None) or displays()[0]
+    x0, y0 = max(d["x"], region["x"]), max(d["y"], region["y"])
+    x1, y1 = min(d["x"] + d["w"], region["x"] + region["w"]), min(d["y"] + d["h"], region["y"] + region["h"])
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return None, "That box was too small."
+    png = Path(tempfile.gettempdir()) / f"tether-box-{time.time_ns()}.png"
+    r = subprocess.run(["screencapture", "-x", "-R", f"{x0:.0f},{y0:.0f},{x1 - x0:.0f},{y1 - y0:.0f}", str(png)],
+                       capture_output=True, timeout=15)
+    if r.returncode != 0 or not png.exists():
+        return None, "Couldn't take the screenshot."
+    return png, ""

@@ -32,10 +32,12 @@ import notes
 import recall
 import slim
 import repos
+import rightclick
 import notifier
 import mini
 import updater
 import screen
+import lift
 import voice
 from hotkey import HOTKEYS, SpeakKey
 
@@ -62,6 +64,7 @@ DEFAULTS = {
     "text_size": 100,         # percent; scales every font size in the window
     "accent": "",             # "#RRGGBB" from Settings › Appearance; "" = the theme's teal
     "bold_accent": True,      # bold words in replies take the accent color
+    "select_anim": "glow",    # selected text: "glow" (flashes as you let go), "liquid" (glides after the pointer), "marker" (paints each line) or "off"
     "reply_anim": "blur",     # how a reply lands: "blur" (words come into focus), "scan" (a bar sweeps each line) or "off"
     "view": "full",           # full = everything; thinking = thinking + replies, no tool calls; chat = just messages and replies
     "transparency": 55,       # 0–100: how much of the desktop shows through the window; 0 = solid, no blur
@@ -69,6 +72,8 @@ DEFAULTS = {
     "glass_adapt": True,      # each pane switches light/dark text, or adds tint, by what's behind it, so text stays readable
     "voice_key": "ctrl+alt+space",
     "circle_key": "ctrl+alt+c",
+    "markup_key": "ctrl+alt+m",
+    "tool_favs": ["circle", "window"],  # toolbox tools kept in the message box (the star in the toolbox)
     "whisper_model": "base",
     "mic": "",
     "vocabulary": "",
@@ -103,16 +108,19 @@ class Api:
         self._outbox: queue.Queue = queue.Queue()
         self.settings = load_settings()
         self._sessions: dict[str, engine.Session] = {}
+        self._side: dict[str, dict] = {}  # chat id -> its side question copy (see side_ask)
         self._overlays: list = []
         self._shown: set = set()
         self._mark_gen = 0
         self._overlay_hide = None
         self._marks_up = False
         self._circle_displays = None
+        self._pick: dict | None = None  # Mark up a window, while it's on (see start_circle)
         self._dictation = voice.Dictation(lambda lvl: self._emit({"type": "level", "level": lvl}))
         self._voice_key = SpeakKey(lambda: self._bg(self._voice_down), lambda: self._bg(self._voice_up),
                                    key_id=1, name="voice key")
         self._circle_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle), key_id=2, name="circle key")
+        self._markup_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle, "window"), key_id=3, name="markup key")
         threading.Thread(target=self._send_loop, daemon=True).start()
 
     @staticmethod
@@ -130,6 +138,11 @@ class Api:
         if t == "diff" and ev.get("file") and artifacts.tracked(ev["file"]):  # Claude edited a file in View
             artifacts.snapshot(ev["file"])
         if t == "result":
+            pk = self._pick
+            if pk and pk.get("phase") == "sent" and (not pk.get("sid") or pk.get("sid") == sid):
+                self._pick = None
+                if not self._marks_up:
+                    self._bg(self._markup, [])
             self._markup_release(float(self.settings["mark_linger"]))
             self._maybe_notify(sid, "Finished" if ev.get("ok") else "Stopped with an error")
             if sid:
@@ -401,6 +414,118 @@ class Api:
         s = engine.Session(self._emit, cwd, self.settings)
         self._sessions[s.sid] = s
         return {"sid": s.sid, "cwd": cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode, "fast": s.fast, "items": []}
+
+    SIDE_NOTE = ("[Tether side task] This chat is a copy, made so the message below can run alongside the original. "
+                 "The original chat is still working on its own task in the same folder: don't continue or redo that task, "
+                 "and don't edit files it's changing unless this message needs it.\n\n")
+
+    def fork_session(self, sid, text, images=None):
+        """Run separately: a copy of this chat, everything said so far, takes a queued message and runs alongside it."""
+        p = self._sessions.get(sid)
+        if not p:
+            return {"error": "That session isn't open."}
+        if not history.find_file(sid):
+            return {"error": "This chat isn't saved yet. Try again in a moment."}
+        s = engine.Session(self._emit, p.cwd, self.settings, fork_from=sid)
+        s.model, s.effort, s.perm_mode, s.fast = p.model, p.effort, p.perm_mode, p.fast
+        s.title = (text or "Side task").strip().splitlines()[0][:70]
+        self._sessions[s.sid] = s
+        self.set_meta(s.sid, "title", s.title)  # its first message is the original's, so the list would show that name
+        if s.model:
+            self.set_meta(s.sid, "model", [s.model, s.effort])
+        if s.perm_mode:
+            self.set_meta(s.sid, "perm_mode", s.perm_mode)
+        items = self._items(sid)  # what the copy starts from
+        try:
+            s.send(self.SIDE_NOTE + text, images or [])
+        except (OSError, RuntimeError) as exc:
+            self._sessions.pop(s.sid, None)
+            return {"error": str(exc)}
+        return {"sid": s.sid, "cwd": s.cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode,
+                "fast": s.fast, "title": s.title, "items": items, "parts": recall.lineage(sid)[1:]}
+
+    # ----- side questions (/btw, ⌘/) -----
+    # Claude Code's /btw only works in its terminal, so Tether makes its own: a throwaway copy of the chat that isn't
+    # saved. It keeps the chat's tools, model and system prompt so the copy reads the chat from the prompt cache
+    # (about one short reply's cost) instead of paying for all of it again; a hook refuses every tool call instead.
+    SIDEQ_NOTE = ("[Tether side question] The person asks this on the side while the chat goes on; it isn't part of the chat's task. "
+                  "Answer only from what's already in this conversation, short and plain. Tools are switched off for this question, "
+                  "so don't try any. If the conversation doesn't say, say that in a sentence.\n\n")
+    SIDEQ_HOOK = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command":
+                  "echo 'Tools are off for a Tether side question. Answer from the conversation.' >&2; exit 2"}]}]}}
+    SIDEQ_IDLE = 15 * 60  # an unused copy stops after this; the next question makes a fresh one
+
+    def side_ask(self, sid, qid, text, earlier=None):
+        """Ask a side question about this chat. Answers come back as `sideq` events; nothing is added to the chat."""
+        p = self._sessions.get(sid)
+        if not p:
+            return {"error": "That session isn't open."}
+        f = history.find_file(sid)
+        if not f:
+            return {"error": "This chat isn't saved yet. Ask again after its first reply."}
+        size = f.stat().st_size
+        cur = self._side.get(sid)
+        # the chat moved on (or its model changed) since the copy was made: copy it again so the answer is current
+        if cur and (not cur["s"].alive or cur["size"] != size or cur["run"] != (p.model, p.effort, p.fast)):
+            cur["s"].close()
+            cur = None
+        prompt = self.SIDEQ_NOTE + "Question: " + str(text or "").strip()
+        if not cur:
+            if earlier:  # a fresh copy doesn't know the earlier side questions; give it the gist
+                past = "\n\n".join(f"Q: {str(x.get('q', ''))[:400]}\nA: {str(x.get('a', ''))[:1200]}" for x in earlier[-4:])
+                prompt = self.SIDEQ_NOTE + "Earlier side questions:\n\n" + past + "\n\nQuestion: " + str(text or "").strip()
+            cur = {"qid": qid, "size": size, "run": (p.model, p.effort, p.fast), "got": False, "t0": time.time()}
+            s = engine.Session(lambda ev, c=cur: self._side_event(sid, c, ev), p.cwd, self.settings, fork_from=sid)
+            s.model, s.effort, s.perm_mode, s.fast = p.model, p.effort, p.perm_mode, p.fast
+            s.title = "Side question"
+            s.extra_settings, s.no_persist = self.SIDEQ_HOOK, True
+            cur["s"] = s
+            self._side[sid] = cur
+        elif cur["s"].status in ("running", "waiting", "starting"):
+            return {"error": "Still answering the last side question."}
+        cur.update(qid=qid, got=False, t0=time.time(), last=time.time(), waiting=True)
+        try:
+            cur["s"].send(prompt)
+        except (OSError, RuntimeError) as exc:
+            self._side.pop(sid, None)
+            return {"error": str(exc)}
+        print(f"[sideq] {sid[:8]} asked ({'warm copy' if cur.get('n') else 'new copy'})", file=sys.stderr, flush=True)
+        cur["n"] = cur.get("n", 0) + 1
+        return {"ok": True}
+
+    def _side_event(self, sid, cur, ev):
+        t, s = ev.get("type"), cur.get("s")
+        out = lambda kind, **kw: self._emit({"type": "sideq", "sid": sid, "qid": cur["qid"], "kind": kind, **kw})
+        if t == "text_delta":
+            cur["got"] = True
+            out("delta", text=ev.get("text", ""))
+        elif t == "text_start" and cur["got"]:
+            out("delta", text="\n\n")
+        elif t == "permission" and s:  # the hook should have stopped it already
+            s.answer(ev.get("rid"), "deny", note="Tools are off for a side question. Answer from the conversation.")
+        elif t == "result":
+            cur["last"], cur["waiting"] = time.time(), False
+            out("done", ok=bool(ev.get("ok")), error=ev.get("error") or "", cost=ev.get("cost"), seconds=round(time.time() - cur["t0"], 1))
+            print(f"[sideq] {sid[:8]} answered in {time.time() - cur['t0']:.1f}s, cost {ev.get('cost')}", file=sys.stderr, flush=True)
+            threading.Timer(self.SIDEQ_IDLE + 5, self._side_idle, args=(sid, cur)).start()
+        elif t == "error":
+            out("error", text=ev.get("text", ""))
+        elif t == "session_state" and ev.get("status") == "exited" and self._side.get(sid) is cur:
+            self._side.pop(sid, None)
+            if cur.get("waiting") and not cur.get("closing"):
+                out("error", text="The side question stopped before it finished.")
+
+    def _side_idle(self, sid, cur):
+        if self._side.get(sid) is cur and time.time() - cur.get("last", 0) >= self.SIDEQ_IDLE and cur["s"].status == "idle":
+            self.side_close(sid)
+
+    def side_close(self, sid):
+        """The popout was closed (or the chat): stop its copy."""
+        cur = self._side.pop(sid, None)
+        if cur:
+            cur["closing"] = True
+            cur["s"].close()
+        return {"ok": True}
 
     IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
 
@@ -902,6 +1027,7 @@ class Api:
         return {"ok": True}
 
     def close_session(self, sid):
+        self.side_close(sid)
         s = self._sessions.pop(sid, None)
         if s:
             if s.status in ("running", "waiting"):
@@ -1303,6 +1429,8 @@ class Api:
     def _markup(self, marks: list) -> None:
         if not self._overlays:
             return
+        if marks and self._pick and self._pick.get("phase") == "sent":
+            self._pick = None
         groups = screen.place_marks(marks)[:len(self._overlays)]
         if self._overlay_hide:
             self._overlay_hide.cancel()
@@ -1389,7 +1517,10 @@ class Api:
                 win.setFrame_display_(AppKit.NSMakeRect(0, 0, 1, 1), False)
         AppHelper.callAfter(hide)
 
-    def start_circle(self):
+    def start_circle(self, mode="circle"):
+        """mode "circle": draw on the screen to ask about it. "text": drag a box and its text goes in the message box.
+        "lift": drag a box over a table and it opens on the Shelf (lift.py). "window": windows light up under the
+        pointer; click one and a prompt box opens over it, and Claude marks that window up (window_pick, window_ask)."""
         if not self._overlays:
             return
         if not screen.allowed(ask=True):
@@ -1400,21 +1531,166 @@ class Api:
             self._overlay_hide.cancel()
         self._mark_gen += 1
         self._circle_displays = screen.displays()[:len(self._overlays)]
+        self._circle_mode = mode
         main_h = screen.main_display_height()
         self._circle_spots = [{} for _ in self._circle_displays]
         for i, d in enumerate(self._circle_displays):
             AppHelper.callAfter(self._overlay_in, i, d, main_h, self._circle_spots[i], True)
         time.sleep(0.15)
+        self._pick = None
         for i in range(len(self._circle_displays)):
-            self._js_overlay(i, f"lasso(true, {i})")
+            hint = json.dumps("Drag over a table or chart" if mode == "lift" else "Drag over the text you want")
+            self._js_overlay(i, f"grab(true, {i}, {hint})" if mode in ("text", "lift") else
+                             f"pick(true, {i})" if mode == "window" else f"lasso(true, {i})")
         self._shown = set(range(len(self._circle_displays)))
         self._emit({"type": "circling", "on": True})
+        if mode == "window":
+            self._pick = {"phase": "hover", "stack": screen.window_stack(), "hover": None, "token": self._mark_gen}
+            self._bg(self._pick_loop, self._mark_gen)
 
     def circle_cancel(self):
+        if self._pick:
+            self._pick = None
+            self._pick_focus(None)
+            self._circle_displays = self._circle_displays or [None]
         if self._circle_displays:
             self._circle_displays = None
             self._bg(self._markup, [])
         self._emit({"type": "circling", "on": False})
+
+    # ----- mark up a window -----
+
+    def _pick_loop(self, token) -> None:
+        """Follow the pointer (the overlays don't get mouse moves until they're key) and light up the window under it.
+        Only a change of window is sent to the overlays; they glide the glow there."""
+        import AppKit
+        main_h = screen.main_display_height()
+        last, n = "", 0
+        while self._pick and self._pick.get("token") == token and self._pick.get("phase") == "hover":
+            n += 1
+            if n % 40 == 0:  # windows can move or open while you look around
+                try:
+                    self._pick["stack"] = screen.window_stack()
+                except Exception:  # noqa: BLE001
+                    pass
+            p = AppKit.NSEvent.mouseLocation()
+            x, y = p.x, main_h - p.y
+            hit = next((w for w in self._pick["stack"]
+                        if w["x"] <= x < w["x"] + w["w"] and w["y"] <= y < w["y"] + w["h"]), None)
+            if hit and hit["ours"]:
+                hit = None
+            key = str(hit["id"]) if hit else ""
+            if key != last:
+                last = key
+                self._pick["hover"] = hit
+                name = (f"{hit['app']} · {hit['title']}" if hit["title"] and hit["title"] != hit["app"] else hit["app"]) if hit else ""
+                for j, d in enumerate(self._circle_displays or []):
+                    spot = self._circle_spots[j]
+                    r = ({"x": hit["x"] - d["x"] - spot.get("dx", 0.0), "y": hit["y"] - d["y"] - spot.get("dy", 0.0),
+                          "w": hit["w"], "h": hit["h"], "name": name} if hit else None)
+                    self._js_overlay(j, f"pickHover({json.dumps(r)})")
+            time.sleep(0.03)
+
+    def _pick_focus(self, i) -> None:
+        """Let overlay i take the keyboard so you can type in its prompt box (None gives it back to Tether)."""
+        from PyObjCTools import AppHelper
+
+        def go():
+            import AppKit
+            try:
+                for j, o in enumerate(self._overlays):
+                    win = o.native
+                    if win is None:
+                        continue
+                    win.focus = j == i  # pywebview's window says it can take the keyboard when this is on
+                    if j == i:
+                        win.makeKeyWindow()
+                        app = AppKit.NSApplication.sharedApplication()
+                        if not app.isActive():
+                            app.activateIgnoringOtherApps_(True)
+                            win.makeKeyWindow()
+                if i is None and self._window and self._window.native and AppKit.NSApplication.sharedApplication().isActive():
+                    self._window.native.makeKeyWindow()
+            except Exception:  # noqa: BLE001 - the prompt box just won't take typing
+                pass
+        AppHelper.callAfter(go)
+
+    def window_pick(self, i):
+        """A click on a lit window: its overlay keeps the glow and opens the prompt box; the others step aside."""
+        pk = self._pick
+        if not pk or pk.get("phase") != "hover" or not pk.get("hover"):
+            return False
+        pk["phase"], pk["win"], pk["idx"] = "ask", pk["hover"], int(i)
+        for j in range(len(self._circle_displays or [])):
+            if j != int(i):
+                self._js_overlay(j, "pick(false)")
+                self._overlay_out(j, self._mark_gen)
+        self._shown = {int(i)}
+        self._pick_focus(int(i))
+        return True
+
+    def window_ask(self, i, text):
+        self._bg(self._window_ask_safely, int(i), str(text or "").strip())
+
+    def _window_ask_safely(self, i, text) -> None:
+        try:
+            self._window_ask(i, text)
+        except Exception as exc:  # noqa: BLE001
+            self._pick = None
+            self._circle_displays = None
+            self._pick_focus(None)
+            self._markup([])
+            self._emit({"type": "circling", "on": False})
+            self._emit({"type": "notice", "level": "error", "text": f"Mark up a window failed: {exc}"})
+
+    def _window_ask(self, i, text) -> None:
+        pk = self._pick
+        if not pk or pk.get("phase") != "ask":
+            return
+        win = pk["win"]
+        pk["phase"] = "sent"
+        self._circle_displays = None
+        from PyObjCTools import AppHelper
+
+        def step_aside():  # the pill stays, but clicks go through, and the picked app comes to the front for the marks
+            import AppKit
+            for o in self._overlays:
+                if o.native is not None:
+                    o.native.focus = False
+                    o.native.setIgnoresMouseEvents_(True)
+            app = AppKit.NSApplication.sharedApplication()
+            other = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(win["pid"])
+            if other is not None:
+                try:
+                    app.yieldActivationToApplication_(other)
+                except Exception:  # noqa: BLE001 - before macOS 14
+                    pass
+                other.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps)
+        AppHelper.callAfter(step_aside)
+        time.sleep(0.35)
+        ok, err, parts = screen.capture_picked(win)
+        self._emit({"type": "circling", "on": False})
+        if not ok:
+            self._pick = None
+            self._markup([])
+            self._emit({"type": "notice", "level": "error", "text": err})
+            return
+        p = parts[0]
+        images = [{"data": base64.b64encode(Path(p["path"]).read_bytes()).decode(), "media_type": "image/png"
+                   if p["path"].endswith(".png") else "image/jpeg", "label": p["label"]}]
+        Path(p["path"]).unlink(missing_ok=True)
+        where = p["label"] + ("" if p["markable"] else " (it's partly behind other windows, so describe where things are)")
+        ask = text or "Point out anything worth a look."
+        self._emit({"type": "window_marked", "images": images,
+                    "text": f"Mark up {where} on my screen: {ask}"})
+        token = self._mark_gen
+        t = threading.Timer(180, lambda: self._pick and self._mark_gen == token and self.circle_cancel())  # never a stuck pill
+        t.daemon = True
+        t.start()
+
+    def window_ask_sent(self, sid):
+        if self._pick and self._pick.get("phase") == "sent":
+            self._pick["sid"] = sid
 
     def circle_key(self, key):
         """Return or Esc in the app window while drawing (the overlays never take the keyboard)."""
@@ -1472,6 +1748,51 @@ class Api:
         self._markup_release(4)  # the ring fades soon; Claude's own marks replace it
         self._show_window()
         self._emit({"type": "circled", "images": images})
+
+    def text_done(self, i, rect):
+        self._bg(self._grabbed_safely, i, rect)
+
+    def _grabbed_safely(self, i, rect) -> None:
+        try:
+            self._grabbed(i, rect)
+        except Exception as exc:  # noqa: BLE001
+            self._circle_displays = None
+            self._markup([])
+            self._emit({"type": "circling", "on": False})
+            self._emit({"type": "notice", "level": "error", "text": f"Copy text from the screen failed: {exc}"})
+
+    def _grabbed(self, i, rect) -> None:
+        """Copy text from the screen: the box the user dragged (overlay points) is read on this Mac."""
+        displays = self._circle_displays
+        if not displays or not rect:
+            return
+        self._circle_displays = None
+        i = int(i)
+        d, spot = displays[i], self._circle_spots[i]
+        x, y, w, h = (float(v) for v in rect)
+        region = {"x": d["x"] + x + spot.get("dx", 0.0), "y": d["y"] + y + spot.get("dy", 0.0), "w": w, "h": h}
+        from PyObjCTools import AppHelper
+        for j in range(len(displays)):
+            if j != i:
+                self._js_overlay(j, "lasso(false)")
+        AppHelper.callAfter(lambda: [o.native and o.native.setIgnoresMouseEvents_(True) for o in self._overlays])
+        time.sleep(0.2)  # the overlay is clear by now; let it repaint before the screenshot
+        if getattr(self, "_circle_mode", "") == "lift":
+            got = lift.lift(d["n"], region)
+            self._markup([])
+            self._emit({"type": "circling", "on": False})
+            self._show_window()
+            if got.get("picture"):  # no table to read (a chart): Claude gets the picture instead
+                pic = Path(got["picture"])
+                got = {"image": {"data": base64.b64encode(pic.read_bytes()).decode(), "media_type": "image/png", "label": "boxed on screen"}}
+                pic.unlink(missing_ok=True)
+            self._emit({"type": "lifted", **got})
+            return
+        text, err = screen.read_text(d["n"], region)
+        self._markup([])
+        self._emit({"type": "circling", "on": False})
+        self._show_window()
+        self._emit({"type": "screen_text", "text": text, "error": err or ("" if text else "No text found in that box.")})
 
     # ----- voice -----
 
@@ -1562,6 +1883,37 @@ class Api:
         except Exception as exc:  # noqa: BLE001 - the panes just keep their theme
             return {"error": str(exc)}
 
+    def drag_window(self):
+        """Mouse down on the header or the top of the sidebar: the window follows the pointer until the button comes up.
+        Tracked in macOS's whole-desktop coordinates, so it crosses displays. pywebview's own drag measured the pointer
+        against the screen Tether opened on, so with that screen off to one side the window couldn't leave it."""
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(self._drag_start)
+
+    def _drag_start(self) -> None:
+        import AppKit
+        n = self._window.native if self._window else None
+        if getattr(self, "_drag_timer", None):
+            self._drag_timer.invalidate()
+        if not n or not AppKit.NSEvent.pressedMouseButtons() & 1 or n.styleMask() & AppKit.NSWindowStyleMaskFullScreen:
+            return
+        p, o = AppKit.NSEvent.mouseLocation(), n.frame().origin
+        off = (p.x - o.x, p.y - o.y)
+
+        def follow(timer):
+            if not AppKit.NSEvent.pressedMouseButtons() & 1:
+                timer.invalidate(); self._drag_timer = None
+                return
+            q, h = AppKit.NSEvent.mouseLocation(), n.frame().size.height
+            x, y = q.x - off[0], q.y - off[1]
+            for sc in AppKit.NSScreen.screens():  # like a title bar, the top can't go under the menu bar
+                if AppKit.NSPointInRect(q, sc.frame()):
+                    v = sc.visibleFrame(); y = min(y, v.origin.y + v.size.height - h)
+                    break
+            n.setFrameOrigin_((x, y))
+        self._drag_timer = AppKit.NSTimer.timerWithTimeInterval_repeats_block_(1 / 120, True, follow)
+        AppKit.NSRunLoop.currentRunLoop().addTimer_forMode_(self._drag_timer, AppKit.NSRunLoopCommonModes)
+
     def zoom(self):
         """Double-click on the header or the top of the sidebar, as on a title bar."""
         from PyObjCTools import AppHelper
@@ -1598,7 +1950,7 @@ class Api:
 
     def _bind_keys(self) -> None:
         """Main thread."""
-        for key, setting in ((self._voice_key, "voice_key"), (self._circle_key, "circle_key")):
+        for key, setting in ((self._voice_key, "voice_key"), (self._circle_key, "circle_key"), (self._markup_key, "markup_key")):
             err = key.set(self.settings[setting])
             if err:
                 self._bg(self._emit, {"type": "notice", "level": "error", "text": err})
@@ -1703,6 +2055,8 @@ class Api:
     def _shutdown(self) -> None:
         for s in self._sessions.values():
             s.close()
+        for sid in list(self._side):
+            self.side_close(sid)
 
 
 def click_through() -> None:
@@ -1715,6 +2069,15 @@ def click_through() -> None:
             return True
         objc.classAddMethods(BrowserView.WebKitHost, [
             objc.selector(acceptsFirstMouse_, selector=b"acceptsFirstMouse:", signature=b"Z@:@")])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def right_click() -> None:
+    """Right-click shows macOS's Copy, Cut and Paste menu (pywebview empties it)."""
+    try:
+        from webview.platforms.cocoa import BrowserView
+        rightclick.install(BrowserView.WebKitHost)
     except Exception:  # noqa: BLE001
         pass
 
@@ -1824,6 +2187,7 @@ def main() -> int:
     keep_page_storage()
     api = Api()
     webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True  # the header drags the window; its buttons don't
+    webview.settings["DRAG_REGION_SELECTOR"] = ".tether-no-pywebview-drag"  # Api.drag_window moves it instead, across displays
     window = webview.create_window(APP_NAME, url=str(HERE / "ui" / "index.html"), js_api=api, width=1360, height=880,
                                    min_size=(900, 560), background_color="#000000", frameless=True, easy_drag=False,
                                    transparent=True, vibrancy=True)
@@ -1838,6 +2202,7 @@ def main() -> int:
     window.events.closed += lambda: [o.destroy() for o in api._overlays]
     brand_the_process()
     click_through()
+    right_click()
 
     def started():
         from PyObjCTools import AppHelper
