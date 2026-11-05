@@ -1547,7 +1547,7 @@ function onEvent(ev) {
         if (S.sid === state.active) { refreshRepo(true); if (state.panel && state.tab === "stats") setTimeout(renderPanel, 1500); }
       }
       break;
-    case "error": if (S) add(S, el("div", "err", esc(ev.text))); else toast(ev.text, "error"); break;
+    case "error": if (S) add(S, errRow(S, ev.text)); else toast(ev.text, "error"); break;
     case "notice": if (S) add(S, el("div", "note", esc(ev.text))); else toast(ev.text, ev.level); break;
     case "compaction": if (S) { add(S, compactionRow(S, ev)); S.lastCompaction = ev; } break;
     case "markup": state.marksUp = !!(ev.marks || []).length; if (!$("#tools-menu").hidden) renderToolsMenu(); break;
@@ -3330,6 +3330,26 @@ function markPalette() { $("#pal-res").querySelectorAll(".it").forEach(n => n.cl
 function runPalette(i) { const it = pal.items[i]; if (!it) return; closePalette(); it.run(); }
 
 // ---------- modal + settings ----------
+// ---------- report a problem: a GitHub issue filled in here, checked by you, submitted in the browser ----------
+function errRow(S, text) {
+  const d = el("div", "err", `<span class="t">${esc(text)}</span><button class="err-report">Report</button>`);
+  d.querySelector(".err-report").onclick = () => reportProblem(S.sid, text);
+  return d;
+}
+async function reportProblem(sid = "", error = "") {
+  const r = await api().report_info(sid, error);
+  const box = openModal(`<h2>Report a problem</h2>
+    <p class="modal-p">This opens a public issue on GitHub. Remove anything you don't want others to see.</p>
+    <input type="text" class="field rep-title" spellcheck="false">
+    <textarea class="field rep-body" spellcheck="false"></textarea>
+    <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-go>Open on GitHub</button></div>`);
+  box.querySelector(".rep-title").value = r.title;
+  box.querySelector(".rep-body").value = r.body;
+  box.querySelector("[data-go]").onclick = () => {
+    api().open_report(box.querySelector(".rep-title").value, box.querySelector(".rep-body").value);
+    closeModal(); toast("Check it on GitHub, then click Create.");
+  };
+}
 function openModal(html) {
   const m = $("#modal"), box = m.querySelector(".modal-box");
   box.innerHTML = html;
@@ -3385,10 +3405,12 @@ async function settingsDialog() {
       ${row("History", `<select data-k="history_days">${opts([["14", "2 weeks"], ["45", "45 days"], ["90", "90 days"], ["365", "1 year"]], String(s.history_days))}</select>`)}
       ${s.fast_unavailable ? row("Fast mode", `<span class="dim">${esc(s.fast_unavailable)}</span> <button class="btn ghost small" id="fast-recheck">Check again</button>`, "Shows the Fast button again; it hides itself if your account still can't use it") : ""}
       ${row("claude command", `<input type="text" data-k="claude_path" value="${esc(s.claude_path)}" placeholder="Found automatically">`)}
+      ${row("Report a problem", `<button class="btn ghost small" id="report-btn">Report…</button>`, "Opens a GitHub issue with Tether's versions and the end of its log. You see it all before it's sent")}
     </section>
     <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
   sheetNav(box);
   box.querySelectorAll("[data-mac]").forEach(b => b.onclick = () => api().open_mac_settings(b.dataset.mac));
+  box.querySelector("#report-btn").onclick = () => reportProblem(state.active || "");
   box.querySelector("#fast-recheck")?.addEventListener("click", async e => {
     state.settings = await api().save_settings({ fast_unavailable: "" });
     e.target.closest(".setrow").remove();

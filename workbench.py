@@ -1384,6 +1384,54 @@ class Api:
         if url:
             subprocess.Popen(["open", url])
 
+    # ----- report a problem: a GitHub issue the user reads and submits in the browser -----
+    REPORT_REPO = "https://github.com/jfroy525/tether"
+
+    def report_info(self, sid="", error=""):
+        """Title and body for an issue: versions, the chat's model, the error and the end of Tether.log, with the
+        user's home folder and name swapped for ~ and <user>. Chat text, files and pictures are never included."""
+        import platform
+        home, user = str(Path.home()), Path.home().name
+
+        def scrub(t: str) -> str:
+            return re.sub(rf"\b{re.escape(user)}\b", "<user>", str(t).replace(home, "~")) if user else str(t)
+        git = lambda *a: repos._run(["git", *a], str(Path(__file__).resolve().parent), 10)[1].strip()  # noqa: E731
+        try:
+            cv = subprocess.run([engine.find_claude(self.settings.get("claude_path", "")) or "claude", "--version"],
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            cv = "not found"
+        S = self._sessions.get(sid)
+        log = Path.home() / "Library/Logs/Tether.log"
+        try:
+            tail = log.read_text(errors="replace").splitlines()[-40:]
+        except OSError:
+            tail = []
+        tail = [l[:300] for l in tail]
+        rows = [f"- Tether: {git('log', '-1', '--format=%h · %cs') or 'unknown'}",
+                f"- macOS: {platform.mac_ver()[0] or 'unknown'} ({platform.machine()})",
+                f"- Claude Code: {cv or 'unknown'}"]
+        if S:
+            rows.append(f"- Chat model: {S.model or 'default'} · status {S.status}")
+        err = scrub(error).strip()
+        body = ("**What happened**\n\n(Describe what you were doing.)\n\n"
+                + (f"**Error**\n\n```\n{err}\n```\n\n" if err else "")
+                + "**Details**\n\n" + "\n".join(rows) + "\n\n"
+                + "**End of Tether.log**\n\n```\n" + scrub("\n".join(tail)) + "\n```\n")
+        title = (err.splitlines()[0][:90] if err else "Problem report")
+        return {"title": title, "body": body}
+
+    def open_report(self, title, body):
+        """Open GitHub's new-issue page with these filled in; GitHub caps the address, so the body is trimmed."""
+        body = str(body)
+        while True:
+            url = f"{self.REPORT_REPO}/issues/new?" + urllib.parse.urlencode({"title": str(title)[:200], "body": body})
+            if len(url) <= 7800 or len(body) < 200:
+                break
+            body = "(trimmed to fit)\n" + body[-int(len(body) * 0.8):]
+        subprocess.Popen(["open", url])
+        return True
+
     def open_url(self, url):
         if re.match(r"^https?://", str(url)):
             subprocess.Popen(["open", url])

@@ -521,17 +521,25 @@ class Session:
             self.last_own = time.time()
             line = line.strip()
             if not line.startswith("{"):
+                if line:  # plain text on stdout is usually an error message from Claude Code itself
+                    self._stderr = (self._stderr + [line])[-30:]
                 continue
             try:
                 self._event(json.loads(line))
             except Exception as exc:  # noqa: BLE001 - one bad event mustn't kill the session
                 self.emit({"type": "notice", "level": "error", "text": f"Couldn't show an event: {exc}"})
+        try:  # stdout closes a moment before the process is gone; wait for its exit code
+            rc = proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            rc = None
+        time.sleep(0.2)  # lets the last stderr lines land
         if proc is self.proc or self.proc is None:
             tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
             self._set("exited")
-            if tail and proc.returncode not in (0, -15, None):
-                print(f"[claude] {self.sid[:8]} stopped ({proc.returncode}): {tail}", file=sys.stderr, flush=True)
-                self.emit({"type": "error", "sid": self.sid, "text": f"Claude Code stopped: {tail}"})
+            if rc not in (0, -15, None):
+                print(f"[claude] {self.sid[:8]} stopped ({rc}): {tail or 'no message'} · cwd {self.cwd}", file=sys.stderr, flush=True)
+                self.emit({"type": "error", "sid": self.sid, "text": f"Claude Code stopped: {tail}" if tail else
+                           f"Claude Code stopped with code {rc} and no message. Run claude in Terminal in this chat's folder to see why."})
 
     def _event(self, e: dict) -> None:
         kind = e.get("type")

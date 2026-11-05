@@ -23,6 +23,8 @@ open ~/Applications/Tether.app
 
 The build makes `~/Applications/Tether.app`, which runs the code in this folder. If you move the folder, run `zsh build_app.sh` again.
 
+**Report a problem:** red error lines in a chat have a **Report** link, and Settings › Advanced has **Report a problem**. Tether fills in a GitHub issue with its version, macOS, Claude Code's version, the chat's model, the error and the end of `~/Library/Logs/Tether.log`, with your user name replaced. You see and edit all of it first; it opens on GitHub, where you click Create. Issues are public, and chat text, files and pictures are never included.
+
 **Updates:** when a newer Tether is on GitHub, a glowing download icon appears next to the settings gear. Click it to see what changed, then **Update and restart**. If Claude is working in any chat, Tether waits until it's done, and the chats you had open come back after the restart. If you installed before the update icon existed, update once by hand: `cd ~/tether && git pull`, then quit Tether (⌘Q) and reopen it.
 
 The first time you use each of these, macOS asks for permission (System Settings › Privacy & Security):
