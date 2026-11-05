@@ -378,16 +378,20 @@ class Session:
 
     FAST_REASONS = {"preference": "Fast mode has been disabled by your organization",
                     "free": "Fast mode needs a paid plan or usage credits", "extra_usage_disabled": "Fast mode needs extra usage turned on",
-                    "network_error": "Fast mode is unavailable: network problem", "unknown": "Fast mode is unavailable right now"}
+                    "network_error": "Fast mode is unavailable: network problem", "unknown": "Fast mode is unavailable right now",
+                    "model_not_allowed": "Fast mode isn't allowed for this model", "not_first_party": "Fast mode only works with the Anthropic API directly",
+                    "disabled_by_env": "Fast mode is turned off on this Mac"}
 
     def _modes(self, permission, fast, reason) -> None:
+        if reason == "sdk_opt_in_required":  # only means Tether hasn't asked for Fast yet; the click asks, and the next reply has the real answer
+            reason = ""
         if permission:
             self.modes["permission"] = permission
         if fast:
             self.modes["fast"] = fast
         if reason is not None or fast == "on":
             self.modes["fast_reason"] = self.FAST_REASONS.get(reason or "", reason or "") if fast != "on" else ""
-        if self.fast and fast == "off" and reason and reason != "sdk_opt_in_required":  # asked for it and the account said no
+        if self.fast and fast == "off" and reason and reason not in ("network_error", "pending"):  # asked for it and the account said no
             self.emit({"type": "fast_unavailable", "sid": self.sid, "reason": self.modes["fast_reason"]})
         self.emit({"type": "modes", "sid": self.sid, **self.modes, "want_fast": self.fast})
 
@@ -401,6 +405,8 @@ class Session:
 
     def set_fast(self, on: bool) -> None:
         self.fast = bool(on)
+        if on and self.modes.get("fast_reason") and self.modes.get("fast") != "on":
+            self.modes["fast_reason"] = ""  # asked again: the next reply says whether it's allowed now
         if self.alive:
             self._send({"type": "control_request", "request_id": f"fm_{uuid.uuid4().hex[:8]}",
                         "request": {"subtype": "apply_flag_settings", "settings": {"fastMode": self.fast}}})

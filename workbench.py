@@ -165,6 +165,8 @@ class Api:
         if t == "fast_unavailable" and ev.get("reason") and self.settings.get("fast_unavailable") != ev["reason"]:
             self.settings["fast_unavailable"] = ev["reason"]
             self._save()
+            self._emit({"type": "notice", "level": "info", "sid": sid,
+                        "text": f"{ev['reason']}, so Tether hid the Fast button. Settings › Advanced › Fast mode can check again."})
         if self._ready:
             self._outbox.put(ev)
 
