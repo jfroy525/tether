@@ -1289,7 +1289,8 @@ class Api:
                 seen.add(it["path"])
                 opened.append({**it, "short": engine.short(it["path"]), "from": "you", "type": artifacts.kind(it["path"]),
                                "title": self._shelf_name(it["path"], it.get("title") or ""), "ts": it.get("ts") or history.last_message_time(x)})
-        return {"items": arts + opened, "hours": int(self.settings.get("shelf_hours", 24) or 0)}
+        here = [x for x in arts + opened if Path(str(x.get("path", ""))).expanduser().exists()]  # deleted or moved: off the list
+        return {"items": here, "hours": int(self.settings.get("shelf_hours", 24) or 0)}
 
     def shelf_recent(self, sid):
         """The Shelf's "Other chats": what Claude showed lately in other chats, newest first, with each chat's name."""
@@ -1565,6 +1566,27 @@ class Api:
                 win.setAlphaValue_(0.0)
                 win.setFrame_display_(AppKit.NSMakeRect(0, 0, 1, 1), False)
         AppHelper.callAfter(hide)
+
+    def pick_color(self):
+        """Pick a color from the screen: the Mac's own magnifier (no Screen Recording needed); the hex code goes in the
+        message box. Esc cancels."""
+        import AppKit
+        from PyObjCTools import AppHelper
+
+        def done(color):
+            self._sampler = None
+            if color is None:
+                return
+            c = color.colorUsingColorSpace_(AppKit.NSColorSpace.sRGBColorSpace())
+            if c is None:
+                return self._emit({"type": "screen_color", "error": "Couldn't read that color."})
+            hx = "#" + "".join(f"{max(0, min(255, round(v * 255))):02X}" for v in (c.redComponent(), c.greenComponent(), c.blueComponent()))
+            self._emit({"type": "screen_color", "hex": hx})
+
+        def show():
+            self._sampler = AppKit.NSColorSampler.alloc().init()  # kept until it answers
+            self._sampler.showSamplerWithSelectionHandler_(done)
+        AppHelper.callAfter(show)
 
     def start_circle(self, mode="circle"):
         """mode "circle": draw on the screen to ask about it. "text": drag a box and its text goes in the message box.

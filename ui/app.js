@@ -128,7 +128,7 @@ function makeSession(info) {
     S.stick = nearBottom(S); if (!S.stick) S.glide = false;
     if (S.sid === state.active) syncJump();
   });
-  S.el.addEventListener("wheel", e => { if (e.deltaY < 0 && S.glide) { S.glide = false; S.stick = false; syncJump(); } }, { passive: true });
+  S.el.addEventListener("wheel", e => { if (e.deltaY < 0 && S.glide) { S.glide = false; S.stick = false; syncJump(); } pullOlder(S, e); }, { passive: true });
   $("#chats").appendChild(S.el);
   state.open.set(S.sid, S);
   return S;
@@ -948,7 +948,7 @@ async function renderView(S, body, refresh) {
   ]));
   body.querySelector(".vw-name").onclick = async e => {
     e.stopPropagation();
-    viewMenu(e.currentTarget, viewPicker(S, body));
+    shelfMenu(e.currentTarget, S, body);
   };
   body.querySelector(".vw-ver")?.addEventListener("click", e => {
     e.stopPropagation();
@@ -957,14 +957,64 @@ async function renderView(S, body, refresh) {
   });
   body.querySelectorAll(".vw-mode [data-m]").forEach(b => b.onclick = () => { viewShown.mode = b.dataset.m; viewShown.scroll = [0, 0]; renderView(S, body, true); });
 }
-function viewPicker(S, body) {
-  const pick = x => ({ a: x.title || basename(x.path), b: VIEW_TYPE[x.type] || "", on: x.path === S.viewSel, fn: () => { S.viewSel = x.path; S.viewN = 0; S.viewBase = null; renderView(S, body); } });
-  const now = S.viewItems.filter(x => !x.old), earlier = S.viewItems.filter(x => x.old).reverse();  // earlier: newest first
-  const mine = now.filter(x => x.from === "claude"), yours = now.filter(x => x.from !== "claude");
-  const heads = mine.length > 0 && yours.length > 0;
-  return [heads && mine.length && { hd: "Built by Claude" }, ...mine.map(pick),
-    heads && "sep", heads && { hd: "Opened" }, ...yours.map(pick),
-    earlier.length && now.length && "sep", earlier.length && { hd: "Earlier" }, ...earlier.map(pick)];
+// The Shelf's name menu: a Find box, then days newest first, each folding to one line with a count (Today starts open),
+// and inside each day the items grouped as Mockups, Pages, Files and Pictures.
+const SHELF_KINDS = ["Mockups", "Pages", "Files", "Pictures"];
+const shelfKind = x => /mock-?ups?\b/i.test(`${x.title || ""} ${x.path || ""}`) ? "Mockups" : x.type === "image" ? "Pictures"
+  : x.type === "page" || x.type === "svg" ? "Pages" : "Files";
+function shelfDay(ts) {
+  if (!ts) return [0, "Today"];
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const days = Math.floor((d0 - new Date(ts * 1000).setHours(0, 0, 0, 0)) / 864e5);
+  return days <= 0 ? [0, "Today"] : days === 1 ? [1, "Yesterday"] : days < 7 ? [2, "Earlier this week"] : days < 14 ? [3, "Last week"] : [4, "Older"];
+}
+function shelfWhen(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000), [n] = shelfDay(ts);
+  return n === 0 ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase()
+    : n === 1 ? "" : n === 2 ? d.toLocaleDateString([], { weekday: "short" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+const shelfOpen = {};  // folded days you opened, per chat, while Tether runs
+function shelfMenu(anchor, S, body) {
+  let m = $("#view-menu");
+  if (!m) { m = el("div", "popup menu view-menu"); m.id = "view-menu"; document.body.appendChild(m); }
+  const items = [...(S.viewItems || [])].sort((a, b) => (b.ts || 9e12) - (a.ts || 9e12));
+  const open = shelfOpen[S.sid] || (shelfOpen[S.sid] = new Set([0, shelfDay(items.find(x => x.path === S.viewSel)?.ts)[0]]));
+  const IC = { page: ICON_ART.page, svg: ICON_ART.page, markdown: ICON_ART.markdown, code: ICON_ART.code,
+    image: `<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m5 18 5-5 4 4 2-2 3 3"/></svg>` };
+  let shown = [];
+  const row = x => { shown.push(x);
+    return `<div class="it sh-it${x.path === S.viewSel ? " on" : ""}" data-n="${shown.length - 1}"><span class="sh-ic">${IC[x.type] || IC.page}</span><span class="a">${esc(x.title || basename(x.path))}</span><span class="b">${esc(shelfWhen(x.ts))}</span></div>`; };
+  const kinds = xs => SHELF_KINDS.map(k => { const ys = xs.filter(x => shelfKind(x) === k);
+    return ys.length ? `<div class="sh-kind">${k}</div>${ys.map(row).join("")}` : ""; }).join("");
+  const draw = () => {
+    const q = m.querySelector(".sh-find input").value.trim().toLowerCase();
+    shown = [];
+    let html;
+    if (q) {
+      const hits = items.filter(x => `${x.title || ""} ${basename(x.path)}`.toLowerCase().includes(q));
+      html = hits.length ? kinds(hits) : `<div class="sh-none">Nothing on the Shelf matches “${esc(q)}”</div>`;
+    } else {
+      const days = new Map();
+      for (const x of items) { const [n, name] = shelfDay(x.ts); if (!days.has(n)) days.set(n, { name, xs: [] }); days.get(n).xs.push(x); }
+      html = [...days.entries()].sort((a, b) => a[0] - b[0]).map(([n, d]) => `<div class="sh-day${open.has(n) ? " open" : ""}" data-day="${n}"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span class="a">${d.name}</span><span class="b">${d.xs.length}</span></div>`
+          + (open.has(n) ? `<div class="sh-kids">${kinds(d.xs)}</div>` : "")).join("") || `<div class="sh-none">Nothing on the Shelf yet.</div>`;
+    }
+    m.querySelector(".sh-rows").innerHTML = html;
+    m.querySelectorAll("[data-n]").forEach(n => n.onclick = e => { e.stopPropagation(); pick(shown[+n.dataset.n]); });
+    m.querySelectorAll("[data-day]").forEach(d => d.onclick = e => { e.stopPropagation(); const k = +d.dataset.day; open.has(k) ? open.delete(k) : open.add(k); draw(); });
+  };
+  const pick = x => { if (!x) return; m.hidden = true; S.viewSel = x.path; S.viewN = 0; S.viewBase = null; renderView(S, body); };
+  m.innerHTML = `<div class="sh-find"><input type="text" placeholder="Find on the Shelf" spellcheck="false"></div><div class="sh-rows"></div>`;
+  const inp = m.querySelector("input");
+  inp.oninput = draw;
+  inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); pick(shown[0]); } };
+  m.onclick = e => e.stopPropagation();
+  draw();
+  m.hidden = false;
+  const r = anchor.getBoundingClientRect(), w = Math.min(340, innerWidth - 16);
+  Object.assign(m.style, { width: w + "px", left: Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px", top: r.bottom + 6 + "px", maxHeight: Math.max(200, innerHeight - r.bottom - 20) + "px" });
+  inp.focus();
 }
 // nothing on this chat's Shelf yet, or nothing recent: older items stay one click away
 function renderShelfEmpty(S, body) {
@@ -972,7 +1022,7 @@ function renderShelfEmpty(S, body) {
   body.innerHTML = "";
   const old = (S.viewItems || []).filter(x => x.old).length;
   const box = el("div", "panel-empty", old ? `Nothing new on the Shelf. <a class="shelf-earlier">Earlier (${old})</a>` : "Nothing on the Shelf yet.");
-  box.querySelector(".shelf-earlier")?.addEventListener("click", e => { e.stopPropagation(); viewMenu(e.currentTarget, viewPicker(S, body)); });
+  box.querySelector(".shelf-earlier")?.addEventListener("click", e => { e.stopPropagation(); shelfMenu(e.currentTarget, S, body); });
   body.appendChild(box);
 }
 function viewMenu(anchor, rows) {
@@ -1567,6 +1617,11 @@ function onEvent(ev) {
       break;
     }
     case "circling": state.circling = ev.on; $("#circling").hidden = !ev.on; $("#tools-btn").classList.toggle("on", ev.on); break;
+    case "screen_color":  // Pick a color from the screen: its hex code goes in the message box at the cursor
+      if (ev.error) { toast(ev.error); break; }
+      if (!state.open.get(state.active)) { toast(`Open a session first. The color was ${ev.hex}.`); break; }
+      insertText(ev.hex);
+      break;
     case "screen_text": {  // Copy text from the screen: the words go in the message box, at the cursor, on their own lines
       if (ev.error) { toast(ev.error); break; }
       if (!state.open.get(state.active)) { toast("Open a session first, then copy the text again."); break; }
@@ -1960,11 +2015,37 @@ function openFromNotice(ev) {
   const s = (state.sessions || []).find(x => x.id === ev.sid);
   openSession(ev.sid, ev.cwd || s?.cwd || "", ev.title || s?.title || "").catch(() => {});
 }
+// Keep scrolling up past the top: the "Show earlier messages" line stretches, a bar fills, and at the end the earlier
+// session opens. Stopping springs it back. A flick that only just reached the top doesn't count (PULL_SETTLE).
+const PULL_FULL = 220, PULL_SETTLE = 250;
+function pullOlder(S, e) {
+  const b = S.inner.querySelector(":scope > .older-part");
+  if (!b || b.loading) return;
+  const now = performance.now();
+  if (S.el.scrollTop > 0 || e.deltaY >= 0) { S.atTop = S.el.scrollTop > 0 ? 0 : S.atTop || now; if (e.deltaY > 0) setPull(b, 0); return; }
+  S.atTop = S.atTop || now;
+  if (now - S.atTop < PULL_SETTLE) return;
+  b.pull = Math.min(PULL_FULL, (b.pull || 0) - e.deltaY);
+  setPull(b, b.pull);
+  clearTimeout(b.relax);
+  if (b.pull >= PULL_FULL) { b.open(); return; }
+  b.relax = setTimeout(() => setPull(b, 0), 260);  // stopped scrolling before the end: spring back
+}
+function setPull(b, px) {
+  b.pull = px;
+  b.classList.toggle("pulling", px > 0);
+  b.style.setProperty("--pull", `${Math.round(px * 0.35)}px`);
+  b.style.setProperty("--pull-f", (px / PULL_FULL).toFixed(3));
+}
 // A long conversation is several sessions joined by fresh starts. Scrolling back: the earlier parts load above.
 function olderPartButton(S, parts) {
-  const b = el("div", "note older-part", `<a class="lnk">Show earlier messages</a>`);
+  const b = el("div", "note older-part", `<a class="lnk">Show earlier messages</a><span class="pull-bar"></span>`);
   S.inner.prepend(b);
+  b.open = () => b.querySelector("a").onclick();
   b.querySelector("a").onclick = async () => {
+    if (b.loading) return;
+    b.loading = true; clearTimeout(b.relax);
+    b.classList.add("pull-done");
     b.querySelector("a").textContent = "Loading…";
     const r = await api().part_items(parts[0]);
     const box = el("div", "part");
@@ -2272,11 +2353,13 @@ const TOOL_ICONS = {
   text: '<path d="M4 7V5h16v2M12 5v14M9 19h6"/>',
   lift: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
   clear: '<path d="M7 21h10M5 15l8-8 5 5-6 6H8z"/>',
+  color: '<path d="m14.5 6.5 3 3"/><path d="M16 4.5a2.1 2.1 0 0 1 3 3l-2 2-3-3z"/><path d="M14 7.5 6 15.5 5 19l3.5-1 8-8"/>',
 };
 const TOOLS = [  // group: "Show Claude" points Claude at something; "Bring in" puts something in the message
   { k: "circle", name: "Circle something on screen", short: "Circle", desc: "Draw on it, Claude explains", group: "Show Claude", key: "circle_key", run: () => api().start_circle() },
   { k: "window", name: "Mark up a window", short: "Mark up", desc: "Pick a window, Claude draws on it", group: "Show Claude", key: "markup_key", run: () => api().start_circle("window") },
   { k: "text", name: "Copy text from the screen", short: "Copy text", desc: "Drag a box, its text goes in the message", group: "Bring in", run: () => api().start_circle("text") },
+  { k: "color", name: "Pick a color from the screen", short: "Color", desc: "Click any spot, its hex code goes in the message", group: "Bring in", run: () => api().pick_color() },
   { k: "lift", name: "Lift a table onto the Shelf", short: "Lift table", desc: "Drag over a table, sort and filter it", group: "Bring in", run: () => api().start_circle("lift") },
 ];
 const toolIcon = k => `<svg viewBox="0 0 24 24">${TOOL_ICONS[k] || ""}</svg>`;
