@@ -70,7 +70,8 @@ DEFAULTS = {
     "view": "full",           # full = everything; thinking = thinking + replies, no tool calls; chat = just messages and replies
     "transparency": 55,       # 0–100: how much of the desktop shows through the window; 0 = solid, no blur
     "frost": 50,              # 0–100: how strongly the desktop behind is blurred, apart from transparency; 50 = macOS's own
-    "glass_adapt": True,      # each pane switches light/dark text, or adds tint, by what's behind it, so text stays readable
+    "glass_adapt": True,
+    "dock_pulse": True,       # the Dock icon glows softly while any chat is working      # each pane switches light/dark text, or adds tint, by what's behind it, so text stays readable
     "voice_key": "ctrl+alt+space",
     "circle_key": "ctrl+alt+c",
     "markup_key": "ctrl+alt+m",
@@ -712,6 +713,22 @@ class Api:
         s.title = title
         s._set(s.status)
         return {"sid": sid, "status": s.status, "items": self._items(sid), "title": s.title, "parts": recall.lineage(sid)[1:]}
+
+    def _watch_dock(self) -> None:
+        """Twice a second: is any chat working (replying, starting, or a background job)? The Dock icon pulses while one is."""
+        from PyObjCTools import AppHelper
+        import dock
+        was = False
+        while True:
+            time.sleep(0.5)
+            try:
+                now = bool(self.settings.get("dock_pulse", True)) and any(
+                    s.status in ("running", "starting") or s.busy_work() for s in list(self._sessions.values()))
+            except Exception:  # noqa: BLE001
+                continue
+            if now != was:
+                was = now
+                AppHelper.callAfter(dock.set_working, now)
 
     def _watch_files(self) -> None:
         """Every few seconds: has an open session's file grown from somewhere other than this app?"""
@@ -2313,6 +2330,7 @@ def main() -> int:
         api._dictation.warm(api.settings["whisper_model"])
         threading.Thread(target=api._remember_models, daemon=True).start()
         threading.Thread(target=api._watch_files, daemon=True).start()
+        threading.Thread(target=api._watch_dock, daemon=True).start()
     webview.start(started)
     return 0
 
