@@ -796,9 +796,6 @@ async function loadView(S) {
   const saved = r?.items || [], have = new Set(saved.map(x => x.path));
   // shown live but maybe not in the saved transcript yet
   const live = (S.viewLive || []).filter(x => !have.has(x.path));
-  // older than Settings › Shelf allows: kept under Earlier in the name menu, out of the way
-  const cut = r?.hours ? Date.now() / 1000 - r.hours * 3600 : 0;
-  saved.forEach(x => { x.old = !!(cut && x.ts && x.ts < cut); });
   S.viewItems = [...saved.filter(x => x.from === "claude"), ...live, ...saved.filter(x => x.from !== "claude"), ...(S.viewMem || [])];
   syncViewTab();
   return S.viewItems;
@@ -847,9 +844,8 @@ function onArtifact(S, ev) {
 const viewShown = { sid: null, path: null, mtime: 0, size: 0, n: 0, scroll: [0, 0], mode: "file" };
 async function renderView(S, body, refresh) {
   const items = S.viewItems || await loadView(S);
-  const recent = items.filter(x => !x.old);
-  if (!items.length || (!recent.length && !items.some(x => x.path === S.viewSel))) return renderShelfEmpty(S, body);
-  const it = items.find(x => x.path === S.viewSel) || recent[recent.length - 1];
+  if (!items.length) return renderShelfEmpty(S, body);
+  const it = items.find(x => x.path === S.viewSel) || items[items.length - 1];
   S.viewSel = it.path; S.viewDot = false; syncViewTab();
   const same = viewShown.sid === S.sid && viewShown.path === it.path;
   if (!same) { viewShown.scroll = [0, 0]; viewShown.mode = "file"; }
@@ -862,7 +858,7 @@ async function renderView(S, body, refresh) {
   if (!S.viewBase && r.n) S.viewBase = r.n;  // changed lines are counted from the version you first saw
   Object.assign(viewShown, { sid: S.sid, path: it.path, mtime: r.mtime || 0, size: r.size || 0, n: r.n || 0 });
   const vs = r.versions || [], old = !r.missing && S.viewN && S.viewN !== r.n;
-  const imgs = items.filter(x => x.type === "image" && !!x.old === !!it.old), ii = imgs.indexOf(it);
+  const imgs = items.filter(x => x.type === "image"), ii = imgs.indexOf(it);
   const ch = r.changes?.lines?.length ? r.changes : null;
   body.classList.add("view-body");
   body.innerHTML = `<div class="vw-h pywebview-drag-region">
@@ -1016,14 +1012,11 @@ function shelfMenu(anchor, S, body) {
   Object.assign(m.style, { width: w + "px", left: Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px", top: r.bottom + 6 + "px", maxHeight: Math.max(200, innerHeight - r.bottom - 20) + "px" });
   inp.focus();
 }
-// nothing on this chat's Shelf yet, or nothing recent: older items stay one click away
+// nothing on this chat's Shelf yet
 function renderShelfEmpty(S, body) {
   body.classList.remove("view-body");
   body.innerHTML = "";
-  const old = (S.viewItems || []).filter(x => x.old).length;
-  const box = el("div", "panel-empty", old ? `Nothing new on the Shelf. <a class="shelf-earlier">Earlier (${old})</a>` : "Nothing on the Shelf yet.");
-  box.querySelector(".shelf-earlier")?.addEventListener("click", e => { e.stopPropagation(); shelfMenu(e.currentTarget, S, body); });
-  body.appendChild(box);
+  body.appendChild(el("div", "panel-empty", "Nothing on the Shelf yet."));
 }
 function viewMenu(anchor, rows) {
   let m = $("#view-menu");
@@ -3477,7 +3470,6 @@ async function settingsDialog() {
     ${sec("Screen", row("Circle to explain", `<select data-k="circle_key">${keys(s.circle_key)}</select>`)
       + row("Mark up a window", `<select data-k="markup_key">${keys(s.markup_key || "ctrl+alt+m")}</select>`)
       + row("Keep Claude's marks for", `<select data-k="mark_linger">${opts([["10", "10 seconds"], ["30", "30 seconds"], ["60", "1 minute"], ["300", "5 minutes"], ["0", "Until my next message"]], String(s.mark_linger))}</select>`))}
-    ${sec("Shelf", row("Show items from", `<select data-k="shelf_hours">${opts([["24", "The last day"], ["72", "The last 3 days"], ["168", "The last week"], ["0", "The whole chat"]], String(s.shelf_hours ?? 24))}</select>`, "Older ones wait under Earlier in the Shelf's item menu"))}
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
     ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
@@ -3525,7 +3517,7 @@ async function settingsDialog() {
     const out = {};
     box.querySelectorAll("[data-k]").forEach(i => {
       const k = i.dataset.k;
-      out[k] = i.type === "checkbox" ? i.checked : ["mark_linger", "history_days", "shelf_hours", "auto_fresh", "text_size", "transparency", "frost"].includes(k) ? Number(i.value)
+      out[k] = i.type === "checkbox" ? i.checked : ["mark_linger", "history_days", "auto_fresh", "text_size", "transparency", "frost"].includes(k) ? Number(i.value)
         : k === "pinned" ? i.value.split("\n").map(x => x.trim()).filter(Boolean)
         : k === "accent" ? (/^#?[0-9a-f]{6}$/i.test(i.value.trim()) ? "#" + i.value.trim().replace("#", "").toUpperCase() : "") : i.value;
     });

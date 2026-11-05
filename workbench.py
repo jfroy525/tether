@@ -82,7 +82,6 @@ DEFAULTS = {
     "mark_linger": 30,
     "notify": True,
     "history_days": 45,
-    "shelf_hours": 24,        # the Shelf lists what's this recent; older items wait under Earlier in its menu (0 = everything)
     "claude_path": "",
     "pinned": [],
     "mini_on_top": True,      # the mini window floats above other apps (its pin button)
@@ -1290,7 +1289,7 @@ class Api:
                 opened.append({**it, "short": engine.short(it["path"]), "from": "you", "type": artifacts.kind(it["path"]),
                                "title": self._shelf_name(it["path"], it.get("title") or ""), "ts": it.get("ts") or history.last_message_time(x)})
         here = [x for x in arts + opened if Path(str(x.get("path", ""))).expanduser().exists()]  # deleted or moved: off the list
-        return {"items": here, "hours": int(self.settings.get("shelf_hours", 24) or 0)}
+        return {"items": here}
 
     def shelf_recent(self, sid):
         """The Shelf's "Other chats": what Claude showed lately in other chats, newest first, with each chat's name."""

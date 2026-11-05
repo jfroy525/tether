@@ -1210,8 +1210,6 @@ body.view-full .panel-head { padding-left: 86px; }  /* the traffic lights sit at
 .msg-text.nokern { font-kerning: none; font-variant-ligatures: none; }
 #chats.view-chat .note.late { display: block; }
 .note.late .lnk { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); cursor: pointer; }
-.shelf-earlier { color: var(--accent); cursor: pointer; text-decoration: none; }
-.shelf-earlier:hover { text-decoration: underline; }
 .popup.mini-menu { max-height: none; overflow: visible; min-width: 0; }
 
 /* Side question popout (sideq.js): grows out of the message box's top edge; curved joins make it one piece with the box */
