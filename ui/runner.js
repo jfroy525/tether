@@ -70,17 +70,19 @@
     const ninja = kind === "ninja";
     let col = colours(), colAt = 0, last = 0, t = 0, dist = 0, raf = 0, stopped = false;
     let y = 0, vy = 0, airT = 0, airDur = 0, trick = "hop";   // jumping
+    let floor = 0;                                           // 9 while running along the top of a long word, else 0
     let cut = null;                                          // a ninja strike in progress: {kind, t, dur}
     let things = [], bits = [], dust = [], ghosts = [], nextGap = rnd(40, 90);
 
     function spawn() {
       const flying = ninja && Math.random() < 0.6;
       c.font = `600 10.5px ${col.mono}`;
-      const g = pick(GLYPHS), w = c.measureText(g).width;
+      const g = c.canvas.__glyph?.() || pick(GLYPHS), w = c.measureText(g).width;
       things.push({ x: W + 8, g, w, fly: flying, hy: flying ? rnd(14, 19) : 0, bob: rnd(0, 6), hit: false });
       nextGap = rnd(ninja ? 75 : 95, ninja ? 160 : 200);
     }
-    const onGround = () => y === 0 && vy === 0;
+    const onGround = () => y === floor && vy === 0;
+    const LONG = 24;  // words wider than a jump: hop up onto them and run along the top
     function jump(v, kindOf) { vy = v; airT = 0; airDur = 2 * v / GRAV; trick = kindOf; }
 
     function slice(o) {
@@ -97,6 +99,9 @@
       t += dt; dist += SPEED * dt;
       for (const o of things) o.x -= SPEED * dt * (o.fly ? 1.35 : 1);
       things = things.filter(o => o.x > -30 && !o.hit);
+      const was = floor;
+      floor = things.some(o => !o.fly && o.w > LONG && o.x - 3 <= X && X <= o.x + o.w + 1) ? 9 : 0;
+      if (floor < was && onGround() === false && vy === 0) { trick = "hop"; airT = 0; airDur = 0.25; }  // ran off the end: drop down
       const lastX = things.length ? Math.max(...things.map(o => o.x + o.w)) : -1e9;
       if (W - lastX > nextGap) spawn();
       const dx = cut && cut.kind === "dash" ? Math.sin(Math.PI * Math.min(1, cut.t / cut.dur)) * 26 : 0;
@@ -105,7 +110,8 @@
         if (!o.fly && onGround() && !cut) {  // jump it, maybe with a trick
           const tk = weighted(ninja ? [["flip", 45], ["hop", 30], ["back", 25]] : [["hop", 30], ["flip", 22], ["back", 14], ["star", 18], ["spin", 16]]);
           const v = tk === "hop" ? JUMP : BIG;
-          if (mid - X > 0 && mid - X <= SPEED * (v / GRAV)) jump(v, tk);
+          const near = o.w > LONG ? o.x + 6 - X : mid - X;  // long word: come down on its front end
+          if (near > 0 && near <= SPEED * (v / GRAV)) jump(v, tk);
         }
         if (o.fly && !o.hit && !cut) {  // pick a strike once it's close enough for that strike
           const want = o.want || (o.want = weighted([["slice", 35], ["spin", 25], ["dash", 22], ["cross", 18]]));
@@ -124,9 +130,9 @@
         if (!cut.done && (p >= (cut.kind === "spin" ? 0.45 : 0.4) || (cut.kind === "dash" && X + dx >= o.x - 2))) { slice(o); cut.done = true; }
         if (p >= 1) { if (!cut.done) slice(o); cut = null; }
       }
-      if (y > 0 || vy !== 0) {
+      if (y > floor || vy !== 0) {
         y += vy * dt; vy -= GRAV * dt; airT += dt;
-        if (y <= 0) { y = 0; vy = 0; for (let k = 0; k < 3; k++) dust.push({ x: X + rnd(-3, 3), y: G, vx: rnd(-50, -20), vy: rnd(-30, -10), life: 0.3 }); }
+        if (y <= floor && vy <= 0) { y = floor; vy = 0; for (let k = 0; k < 3; k++) dust.push({ x: X + rnd(-3, 3), y: G - floor, vx: rnd(-50, -20), vy: rnd(-30, -10), life: 0.3 }); }
       }
       for (const b of bits) { b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 600 * dt; b.r += b.vr * dt; b.life -= dt; }
       bits = bits.filter(b => b.life > 0);
@@ -139,7 +145,7 @@
 
     // body rotation / squash for the trick in progress
     function trickPose() {
-      const air = y > 0.5, p = airDur ? airT / airDur : 0;
+      const air = y > floor + 0.5, p = airDur ? airT / airDur : 0;
       if (!air) return { rot: 0, sx: 1, pose: ninja ? (cut && cut.kind !== "spin" ? "slash" : "run") : "run" };
       switch (trick) {
         case "flip": return { rot: TAU * ease(p), sx: 1, pose: p > 0.15 && p < 0.85 ? "tuck" : "air" };
@@ -219,7 +225,7 @@
   }
 
   const still = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const more = {};  // dragon, soccer, snake… from critters.js
+  const more = {};  // dragon, soccer, wizard from critters.js
   window.WorkAnim = {
     kinds: ["runner", "ninja"],
     register(name, make) { more[name] = make; if (!this.kinds.includes(name)) this.kinds.push(name); },

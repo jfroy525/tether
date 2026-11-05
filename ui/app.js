@@ -685,7 +685,7 @@ function agentEvent(S, ev) {
     if (ev.tokens) L.tokens = ev.tokens;
     if (ev.ms) { L.msLive = ev.ms; L.msAt = Date.now(); }
     if (L.status === "starting") L.status = "running";
-    S.step = `${L.desc}: ${L.steps.at(-1)?.text || ""}`; S.inner.querySelector(":scope > .working")?.tick?.();
+    S.step = `${L.desc}: ${L.steps.at(-1)?.text || ""}`; S.word = ""; S.inner.querySelector(":scope > .working")?.tick?.();
   } else if (ev.type === "agent_done") {
     L.status = ev.status || "completed"; L.summary = ev.summary || L.summary;
     if (ev.tools != null) L.tools = ev.tools; if (ev.tokens) L.tokens = ev.tokens;
@@ -1416,21 +1416,33 @@ function permDone(S, rid, choice) {
   undockPerm(c);
 }
 
+// The working line's words when the animation shows the file or search itself: "Read app.js" reads as "Reading".
+function stepWords(S) {
+  const st = S.step || "";
+  if (!st) return "Working";
+  if (!S.word) return st;
+  const m = st.match(/^(Read|Edit|Write|Search|Web search|Fetch) /);
+  return m ? { Read: "Reading", Edit: "Editing", Write: "Writing", Search: "Searching", "Web search": "Searching the web", Fetch: "Fetching" }[m[1]] : st;
+}
+
 function setWorking(S, on) {
   let w = S.inner.querySelector(":scope > .working");
   if (on && !w) {
     w = el("div", "working", `<span class="wtext">Working…</span>`);
     const anim = window.WorkAnim?.create(state.settings.working_anim || "mix");
-    if (anim) { w.classList.add("anim"); w.prepend(anim.el); w.anim = anim; }
+    if (anim) { w.classList.add("anim"); w.prepend(anim.el); w.anim = anim; anim.el.__glyph = () => S.word || ""; }  // what Claude works on rolls in as the thing to jump, zap or burn
     S.inner.insertBefore(w, S.inner.querySelector(":scope > .msg-user.queued"));
     S.started = S.started || Date.now();
     const txt = w.querySelector(".wtext");
-    const tick = () => { txt.textContent = `Working… ${Math.round((Date.now() - S.started) / 1000)}s` + (S.step ? `  ·  ${S.step}` : ""); };
+    const tick = () => {
+      const secs = `${Math.round((Date.now() - S.started) / 1000)}s`;
+      txt.textContent = w.anim ? `${stepWords(S)} · ${secs}` : `Working… ${secs}` + (S.step ? `  ·  ${S.step}` : "");
+    };
     w.tick = tick;
     S.timer = setInterval(tick, 1000);
     scrollDown(S);
   } else if (!on && w) {
-    w.anim?.stop(); w.remove(); clearInterval(S.timer); S.started = 0; S.step = "";
+    w.anim?.stop(); w.remove(); clearInterval(S.timer); S.started = 0; S.step = ""; S.word = "";
   }
 }
 
@@ -1478,7 +1490,7 @@ function onEvent(ev) {
     case "sideq": if (S) SideQ.onEvent(S, ev); break;
     case "thinking_start": if (S) { endText(S); if (!(S.think?.timer && !S.think.querySelector(".body").textContent && !S.think.queue)) thinkBlock(S, "", true, true); } break;
     case "thinking_delta": if (S) { const t = S.think || thinkBlock(S, "", true, true); thinkType(S, t, ev.text); } break;
-    case "tool": if (S) { thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false; addTool(S, ev, false); S.step = ev.label; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
+    case "tool": if (S) { thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false; addTool(S, ev, false); S.step = ev.label; S.word = ev.word || ""; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
     case "tool_progress": if (S) { const t = S.tools.get(ev.id); if (t) { const st = t.querySelector(".steps"); st.appendChild(el("div", "", esc(ev.text))); while (st.children.length > 3) st.firstChild.remove(); } } break;
     case "agent": case "agent_step": case "agent_done": if (S) agentEvent(S, ev); break;
     case "job": case "job_done": if (S) jobEvent(S, ev); break;
@@ -1522,7 +1534,7 @@ function onEvent(ev) {
     case "loaded": if (S && S.sid === state.active && state.panel && state.tab === "stats") { const b = $(".st-loaded"); if (b) fillLoaded(b, S.sid, false); } break;
     case "context": if (S) { S.ctxUsage = ev; S.context = ev.totalTokens; if (S.sid === state.active) showCtx(S); } break;
     case "delivered": if (S) delivered(S, ev.text); break;
-    case "compacting": if (S) { S.step = ev.on ? "Compacting the conversation" : ""; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
+    case "compacting": if (S) { S.step = ev.on ? "Compacting the conversation" : ""; S.word = ""; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
     case "compacted": if (S) { S.ctxUsage = null; api().context_usage(S.sid); } break;
     case "result": if (S) thinkDone(S);
       if (S) {
@@ -3349,7 +3361,7 @@ async function settingsDialog() {
       + row("Color bold words", sw("bold_accent", s.bold_accent !== false), "Bold words in Claude's replies take the accent color, so the key points stand out. Links get an underline to stay distinct")
       + row("Reply animation", `<select data-k="reply_anim">${opts([["blur", "Blur in"], ["scan", "Scan line"], ["pop", "Pop through"], ["off", "Off"]], s.reply_anim || "blur")}</select>`, "How a reply lands: words come into focus, a glowing bar sweeps each line, or letters pop up through the glass, hang in the air and settle. Either way the whole reply is in within about a second and the chat glides with it. Your Mac's Reduce motion setting turns it off")
       + row("Text highlight", `<select data-k="select_anim">${opts([["glow", "Glow"], ["liquid", "Liquid"], ["marker", "Highlighter"], ["off", "No motion"]], s.select_anim || "glow")}</select>`, "When you select text: it glows as you let go, the highlight glides after your pointer, or the color paints across each line")
-      + row("While Claude works", `<select data-k="working_anim">${opts([["mix", "A different one each time"], ["runner", "Runner"], ["ninja", "Ninja"], ["dragon", "Dragon"], ["soccer", "Soccer player"], ["snake", "Snake"], ["wizard", "Wizard"], ["dot", "Simple dot"]], s.working_anim)}</select>`, "The animation on the working line. Your Mac's Reduce motion setting turns it off"))}
+      + row("While Claude works", `<select data-k="working_anim">${opts([["mix", "A different one each time"], ["runner", "Runner"], ["ninja", "Ninja"], ["dragon", "Dragon"], ["soccer", "Soccer player"], ["wizard", "Wizard"], ["dot", "Simple dot"]], s.working_anim)}</select>`, "The animation on the working line. Your Mac's Reduce motion setting turns it off"))}
     ${sec("Voice", row("Hold to talk", `<select data-k="voice_key">${keys(s.voice_key)}</select>`, "Works from any app")
       + row("Microphone", `<select data-k="mic">${opts([["", "System default"], ...mics.map(m => [m, m])], s.mic)}</select>`)
       + row("Send when you stop talking", sw("auto_send_dictation", s.auto_send_dictation)))}

@@ -472,7 +472,8 @@ table.data tr:hover td { background: var(--hover); }
 .working { display: flex; align-items: center; gap: 8px; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .working .wtext { overflow: hidden; text-overflow: ellipsis; background: linear-gradient(90deg, var(--text-3) 0%, var(--text) 50%, var(--text-3) 100%);
   background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2s linear infinite; }
-.working.anim { gap: 4px; margin-left: -10px; }
+.working.anim { gap: 4px; margin-left: -10px; align-items: flex-end; }
+.working.anim .wtext { padding-bottom: 5px; line-height: 14px; }  /* the words stand on the character's ground line */
 .working.anim::before { display: none; }
 .work-anim { flex: none; }
 .working::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; flex: none; }

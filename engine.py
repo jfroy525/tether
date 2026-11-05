@@ -21,6 +21,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 SEARCH_PATHS = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/bin/claude", "~/.claude/local/claude"]
@@ -81,6 +82,36 @@ def tool_label(name: str, inp: dict) -> str:
         _, server, tool = (name.split("__", 2) + ["", ""])[:3]
         return f"{server} · {tool.replace('_', ' ')}"
     return name
+
+
+def tool_word(name: str, inp: dict) -> str:
+    """A word or two for the working line's animation: what the tool is working on (a file name, a search, a command)."""
+    def cut(w: str) -> str:
+        w = " ".join(str(w).split())
+        return w if len(w) <= 14 else w[:13] + "…"
+    if name in ("Read", "Write", "Edit", "MultiEdit", "NotebookEdit"):
+        return cut(Path(str(inp.get("file_path") or inp.get("notebook_path") or "")).name)
+    if name in ("Glob", "Grep"):
+        return cut(inp.get("pattern", ""))
+    if name == "Bash":  # the program it runs, past any cd … && and VAR=… at the front
+        for part in re.split(r"&&|\|\||;|\|", str(inp.get("command") or "")):
+            toks = [t for t in part.split() if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", t)]
+            if toks and toks[0] not in ("cd", "set", "export", "arch", "-arm64", "sudo", "time"):
+                return cut(Path(toks[0].strip("'\"")).name)
+            if toks and toks[0] == "arch" and len(toks) > 2:
+                return cut(Path(toks[2]).name)
+        return ""
+    if name == "WebSearch":
+        return cut(inp.get("query", ""))
+    if name == "WebFetch":
+        return cut(re.sub(r"^www\.", "", urlparse(str(inp.get("url", ""))).netloc))
+    if name in ("Task", "Agent"):
+        return cut(inp.get("subagent_type") or "agent")
+    if name == "Skill":
+        return cut(inp.get("skill", ""))
+    if name.startswith("mcp__"):
+        return cut(name.split("__", 2)[-1].replace("_", " "))
+    return cut(name)
 
 
 AGENT_TOOLS = ("Task", "Agent")
@@ -591,7 +622,7 @@ class Session:
                     self.emit({"type": "markup", "sid": sid, "marks": inp.get("marks") or []})
                 if name in QUIET_TOOLS:
                     continue
-                self.emit({"type": "tool", "sid": sid, "id": tid, "name": name, "label": tool_label(name, inp),
+                self.emit({"type": "tool", "sid": sid, "id": tid, "name": name, "label": tool_label(name, inp), "word": tool_word(name, inp),
                            "input": json.dumps(inp, indent=1, ensure_ascii=False)[:6000],
                            "command": inp.get("command") if name == "Bash" else None, **agent_info(name, inp)})
             return

@@ -57,7 +57,7 @@ DEFAULTS = {
     "keep_notes": True,
     "auto_fresh": 200000,     # start a fresh session (notes + recall carry over) once context passes this; 0 = never       # long sessions get running notes (Haiku), used by recall and handoffs
     "working_anim": "mix",
-    "fast_unavailable": "",   # why this account can't use fast mode (hides the Fast button); cleared by Check again    # runner | ninja | dragon | soccer | snake | wizard | mix | dot
+    "fast_unavailable": "",   # why this account can't use fast mode (hides the Fast button); cleared by Check again    # runner | ninja | dragon | soccer | wizard | mix | dot
     "perm_mode": "",          # "" = your Claude Code default (auto for you); new sessions start in this
     "fast": False,
     "theme": "system",        # system | dark | light
@@ -2073,6 +2073,27 @@ def click_through() -> None:
         pass
 
 
+def dock_reopen(api) -> None:
+    """A click on the Dock icon brings Tether's window back. pywebview doesn't answer the Dock, and macOS only restores
+    a window itself when none is showing; the markup overlays (invisible, one pixel) always count as showing."""
+    try:
+        import objc
+        from webview.platforms.cocoa import BrowserView
+
+        def reopen(self, app, visible):
+            n = api._window.native if api._window else None
+            if n is not None:
+                if n.isMiniaturized():
+                    n.deminiaturize_(None)
+                n.makeKeyAndOrderFront_(None)
+                app.activateIgnoringOtherApps_(True)
+            return False
+        objc.classAddMethods(BrowserView.AppDelegate, [
+            objc.selector(reopen, selector=b"applicationShouldHandleReopen:hasVisibleWindows:", signature=b"Z@:@Z")])
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def right_click() -> None:
     """Right-click shows macOS's Copy, Cut and Paste menu (pywebview empties it)."""
     try:
@@ -2203,6 +2224,7 @@ def main() -> int:
     brand_the_process()
     click_through()
     right_click()
+    dock_reopen(api)
 
     def started():
         from PyObjCTools import AppHelper

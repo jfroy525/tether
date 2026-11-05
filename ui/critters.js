@@ -1,5 +1,5 @@
 // More working-line animations, drawn like runner.js on one small canvas each: a dragon that breathes fire at code
-// glyphs, a soccer player who dribbles past them and scores, a snake that eats them, and a wizard who casts spells. Each picks a random move
+// glyphs, a soccer player who dribbles past them and scores, and a wizard who casts spells. Each picks a random move
 // when a glyph comes near. They register with WorkAnim (runner.js), so Settings and the mix pick them up.
 (function () {
   const W = 200, H = 54, G = 48, TAU = Math.PI * 2;
@@ -64,7 +64,7 @@
   }
   function glyph(c, col) {
     c.font = `600 10.5px ${col.mono}`;
-    const g = pick(GLYPHS);
+    const g = c.canvas.__glyph?.() || pick(GLYPHS);
     return { g, w: c.measureText(g).width };
   }
   function particles(list, dt, grav) {
@@ -242,12 +242,13 @@
         const gd = goal && !goal.scored ? goal.x - X : 1e9;
         const o = gd > 230 && things.find(o => !o.beat && o.x - X > 30 && o.x - X < 52);
         if (gd <= 130 && gd > 70) act = { kind: "shoot", t: 0, dur: 0.55 };
-        else if (o) { o.beat = true; act = { kind: weighted([["flick", 34], ["nutmeg", 33], ["stepover", 33]], opts.only), t: 0, o }; act.dur = { flick: 0.8, nutmeg: 0.9, stepover: 0.6 }[act.kind]; }
+        else if (o) { o.beat = true; act = { kind: o.w > 24 ? "stepover" : weighted([["flick", 34], ["nutmeg", 33], ["stepover", 33]], opts.only), t: 0, o }; act.dur = { flick: 0.8, nutmeg: 0.9, stepover: 0.6 }[act.kind]; }
         else if ((idle += dt) > 1.2 && !things.some(o => o.x - X < 110 && o.x > X) && !goal && Math.random() < dt * (opts.only === "juggle" ? 9 : 0.8)) { act = { kind: "juggle", t: 0, dur: 1.6 }; idle = 0; }
         if (act) reball();
       }
       for (const o of things) {  // hop over whatever reaches us standing
         const mid = o.x + o.w / 2;
+        if (o.w > 24) { if (!o.fall && o.x - X < 14) o.fall = 0.001; continue; }  // too long to hop: it tips over
         if (!o.fall && !o.jumped && onGround() && mid - X > 0 && mid - X <= SPEED * (JUMP / GRAV)) { o.jumped = true; vy = JUMP; }
       }
       if (y > 0 || vy !== 0) {
@@ -358,170 +359,6 @@
       dots(c, col, confetti);
     }
     return { step, draw, probe: () => ({ ballX: ball.x, ballH: ball.h, goalX: goal ? goal.x : null, goalA: goalAlpha(), act: act?.kind, mode: ball.mode }) };
-  }
-
-  // ---------- snake: slithers along, eats glyphs on the ground (you can watch them go down), strikes at flying ones ----------
-  function snake(c, colf, opts = {}) {
-    const SPEED = 62, HX = 124, GAP = 3, NECK = 8, LEN = 30, L = NECK * GAP, MEALS = opts.only === "shed" ? 1 : 5;
-    let t = 0, dist = 0, things = [], bulges = [], sheds = [], sparks = [], act = null, nextGap = 60;
-    let tongue = 0, tongueAt = 1, rattle = 0, meals = 0, shine = -1, jaw = 0, gulp = null;
-    const rest = () => ({ x: HX, y: G - 5.2 - Math.sin(t * 2.6) * 0.5, a: 0.06 });
-    const pose = { ...rest(), vx: 0, vy: 0, va: 0 };  // the head glides to each target on a spring
-    function spawn() {
-      const fly = opts.only === "strike" ? true : opts.only === "eat" ? false : Math.random() < 0.4;
-      things.push({ ...glyph(c, colf()), x: W + 8, fly, hy: fly ? rnd(15, 22) : 0, bob: rnd(0, 6) });
-      nextGap = rnd(80, 150);
-    }
-    const width = i => i <= NECK ? lerp(2.7, 3.8, i / NECK) : i <= 14 ? lerp(3.8, 4.4, (i - NECK) / (14 - NECK)) : lerp(4.4, 0.8, (i - 14) / (LEN - 14));
-    // the centre line, head to tail: an S-curve neck from the head back down to the ground, then the body lying
-    // along the ground over small bumps fixed to the ground, so it looks like it's sliding forward over them
-    function spine() {
-      const H = { x: pose.x, y: pose.y }, B = { x: HX - L, y: G - width(NECK) / 2 };
-      const C1 = { x: B.x + L * 0.55, y: B.y }, C2 = { x: H.x - L * 0.5 * Math.cos(pose.a), y: H.y - L * 0.5 * Math.sin(pose.a) };
-      const pts = [];
-      for (let i = 0; i <= NECK; i++) {
-        const u = 1 - i / NECK, v = 1 - u;
-        pts.push({ x: v * v * v * B.x + 3 * v * v * u * C1.x + 3 * v * u * u * C2.x + u * u * u * H.x, y: v * v * v * B.y + 3 * v * v * u * C1.y + 3 * v * u * u * C2.y + u * u * u * H.y });
-      }
-      for (let i = NECK + 1; i <= LEN; i++) {
-        const x = B.x - (i - NECK) * GAP, w = width(i), k = (i - (LEN - 6)) / 6;
-        const bump = 1.3 * Math.max(0, Math.sin((x + dist) * 0.2)) ** 2 * Math.min(1, (i - NECK) / 3);
-        const lift = rattle && k > 0 ? Math.min(1, rattle / 0.15, 1) * 8 * k * k : 0;  // the tail rises to rattle
-        const buzz = rattle && k > 0.6 ? Math.sin(t * 90) * 1.1 : 0;
-        pts.push({ x: x + buzz * 0.4, y: G - w / 2 - bump - lift + buzz });
-      }
-      return pts;
-    }
-    function outline(pts) {
-      const top = [], bot = [];
-      pts.forEach((p, i) => {
-        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-        const dx = a.x - b.x, dy = a.y - b.y, l = Math.hypot(dx, dy) || 1, nx = dy / l, ny = -dx / l;  // nx, ny: toward the back
-        let w = width(i); for (const g of bulges) w += 2.4 * Math.exp(-((i - g) ** 2) / 2.5);
-        top.push({ x: p.x + nx * w / 2, y: p.y + ny * w / 2 }); bot.push({ x: p.x - nx * w / 2, y: p.y - ny * w / 2 });
-      });
-      return { top, bot };
-    }
-    function smooth(list, start) {  // a smooth line through the points
-      if (start) c.moveTo(list[0].x, list[0].y); else c.lineTo(list[0].x, list[0].y);
-      for (let i = 1; i < list.length - 1; i++) c.quadraticCurveTo(list[i].x, list[i].y, (list[i].x + list[i + 1].x) / 2, (list[i].y + list[i + 1].y) / 2);
-      c.lineTo(list[list.length - 1].x, list[list.length - 1].y);
-    }
-    function step(dt) {
-      t += dt; dist += SPEED * dt;
-      for (const o of things) o.x -= SPEED * dt * (o.fly ? 1.3 : 1);
-      things = things.filter(o => o.x > -30 && !o.gone);
-      const lastX = things.length ? Math.max(...things.map(o => o.x + o.w)) : -1e9;
-      if (W - lastX > nextGap) spawn();
-      if (!act) {
-        const o = things.find(o => !o.claimed && o.x - HX > -2 && o.x - HX < (o.fly ? 50 : 16));
-        if (o) { o.claimed = true; act = o.fly ? { kind: "strike", t: 0, dur: 1.0, o } : { kind: "eat", t: 0, dur: 0.6, o }; if (o.fly) rattle = Math.max(rattle, 0.55); }
-        else if (!rattle && Math.random() < dt * (opts.only === "rattle" ? 1.5 : 0.1)) rattle = 0.9;
-      }
-      let tg = rest(), w = 13;
-      jaw = 0;
-      if (act) {
-        act.t += dt;
-        const p = clamp(act.t / act.dur), o = act.o;
-        if (act.kind === "eat") {  // dip, open wide, the glyph shrinks into the mouth, gulp
-          if (p < 0.55) tg = { x: HX + 5, y: G - 3.8, a: 0.42 };
-          jaw = p < 0.4 ? ease(p / 0.25) : 1 - ease((p - 0.4) / 0.18);
-          if (p >= 0.3 && !o.gone) { o.gone = true; gulp = { g: o.g, w: o.w, t: 0 }; }
-          if (p >= 0.55 && gulp && !gulp.done) { gulp.done = true; bulges.push(0); meals++; }
-        } else {  // rear up into an S, hold, strike, snap it up, settle
-          const ty = G - o.hy, ox = o.x + o.w / 2;
-          if (p < 0.45) tg = { x: HX - 9, y: ty - 1, a: Math.atan2(ty - (ty - 1), ox - (HX - 9)) * 0.6 };
-          else if (p < 0.6) { tg = { x: clamp((ox - 5 - HX) / 30) * 30 + HX, y: ty, a: 0 }; w = 40; jaw = ease((p - 0.45) / 0.07); }
-          else tg = rest();
-          if (p < 0.45) tg.y += Math.sin(t * 40) * 0.25;  // poised, trembling
-          if (p >= 0.58 && !o.gone) { o.gone = true; bulges.push(0); meals++; burst(sparks, ox, ty, 7, true); }
-          if (p >= 0.58) jaw = 1 - ease((p - 0.58) / 0.08);
-        }
-        if (act.t >= act.dur) act = null;
-      }
-      [pose.x, pose.vx] = spring(pose.x, pose.vx, tg.x, w, dt);
-      [pose.y, pose.vy] = spring(pose.y, pose.vy, tg.y, w, dt);
-      [pose.a, pose.va] = spring(pose.a, pose.va, tg.a, w, dt);
-      if (gulp) { gulp.t += dt; if (gulp.t > 0.3) gulp = null; }
-      bulges = bulges.map(b => b + dt * 13).filter(b => b < LEN - 2);
-      if (meals >= MEALS && !bulges.length && !act) {  // shed: the old skin stays on the ground as the snake slides out of it
-        const { top, bot } = outline(spine());
-        sheds.push({ top, bot, life: 2.6 }); meals = 0; shine = 0;
-      }
-      for (const sh of sheds) { sh.life -= dt; for (const p of [...sh.top, ...sh.bot]) p.x -= SPEED * dt; }
-      sheds = sheds.filter(sh => sh.life > 0);
-      if (shine >= 0) { shine += dt * 45; if (shine > LEN + 4) shine = -1; }
-      if (rattle) rattle = Math.max(0, rattle - dt);
-      tongueAt -= dt;
-      if (tongueAt <= 0 && !act) { tongue = 0.3; tongueAt = rnd(0.7, 1.6); }
-      if (tongue) tongue = Math.max(0, tongue - dt);
-      sparks = particles(sparks, dt);
-    }
-    function draw(col) {
-      ground(c, col, dist);
-      c.font = `600 10.5px ${col.mono}`; c.textBaseline = "alphabetic";
-      for (const o of things) if (!o.fly) { c.fillStyle = col.dim; c.fillText(o.g, o.x, G - 1.5); }
-      for (const sh of sheds) {  // the shed skin, fading
-        const a = Math.min(1, sh.life / 1.2);
-        c.beginPath(); smooth(sh.top, true); smooth([...sh.bot].reverse(), false); c.closePath();
-        c.globalAlpha = 0.1 * a; c.fillStyle = col.dim; c.fill();
-        c.globalAlpha = 0.6 * a; c.strokeStyle = col.dim; c.lineWidth = 0.8; c.setLineDash([2, 1.5]); c.stroke(); c.setLineDash([]);
-      }
-      c.globalAlpha = 1;
-      const pts = spine(), { top, bot } = outline(pts), last = pts.length - 1;
-      c.fillStyle = col.fig;
-      c.beginPath(); smooth(top, true); smooth([...bot].reverse(), false); c.closePath(); c.fill();
-      c.globalCompositeOperation = "destination-out";  // diamonds down the back and a belly line, cut so they read in both themes
-      c.globalAlpha = 0.55;
-      for (let i = NECK - 2; i < last - 3; i += 2) {
-        const p = pts[i], q = top[i], s = width(i) * 0.32, a = Math.atan2(pts[i - 1].y - pts[i + 1].y, pts[i - 1].x - pts[i + 1].x);
-        c.save(); c.translate(lerp(p.x, q.x, 0.35), lerp(p.y, q.y, 0.35)); c.rotate(a);
-        c.beginPath(); c.moveTo(-s * 1.4, 0); c.lineTo(0, -s); c.lineTo(s * 1.4, 0); c.lineTo(0, s); c.closePath(); c.fill(); c.restore();
-      }
-      c.globalAlpha = 0.3; c.lineWidth = 0.6; c.strokeStyle = "#000";
-      c.beginPath(); smooth(bot.slice(2, last - 3).map((b, i) => ({ x: lerp(b.x, pts[i + 2].x, 0.3), y: lerp(b.y, pts[i + 2].y, 0.3) })), true); c.stroke();
-      c.globalCompositeOperation = "source-over"; c.globalAlpha = 1;
-      if (shine >= 0) {  // new skin: a gleam runs down the body
-        c.strokeStyle = col.accent; c.lineWidth = 1.2; c.lineCap = "round";
-        const i0 = Math.max(0, Math.floor(shine) - 3), i1 = Math.min(last, Math.floor(shine));
-        if (i1 > i0) { c.beginPath(); for (let i = i0; i <= i1; i++) { const q = top[i], p = pts[i]; const x = lerp(q.x, p.x, 0.3), y = lerp(q.y, p.y, 0.3); i === i0 ? c.moveTo(x, y) : c.lineTo(x, y); } c.stroke(); }
-      }
-      if (rattle) {  // the rattle: beads at the tip, buzz lines
-        const tp = pts[last], tq = pts[last - 1], a = Math.atan2(tp.y - tq.y, tp.x - tq.x);
-        c.fillStyle = col.fig;
-        for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(tp.x + Math.cos(a) * k * 1.4, tp.y + Math.sin(a) * k * 1.4, 1.1 - k * 0.2, 0, TAU); c.fill(); }
-        c.strokeStyle = col.accent; c.lineWidth = 0.9;
-        const j = Math.sin(t * 50) > 0 ? 1 : 0;
-        c.beginPath(); c.moveTo(tp.x - 3, tp.y - 2 - j); c.lineTo(tp.x - 5.5, tp.y - 4.5 - j); c.moveTo(tp.x + 0.5, tp.y - 3.5 - j); c.lineTo(tp.x + 0.5, tp.y - 7 - j); c.moveTo(tp.x + 3, tp.y - 2 - j); c.lineTo(tp.x + 5, tp.y - 4.5 - j); c.stroke();
-      }
-      // the head: a viper's wedge, the jaw hinged at the back
-      c.save(); c.translate(pose.x, pose.y); c.rotate(pose.a);
-      c.fillStyle = col.fig;
-      c.save(); c.rotate(-jaw * 0.6);
-      c.beginPath(); c.moveTo(-3.2, -1.9); c.lineTo(0.3, -3.1); c.lineTo(4.8, -1.8); c.lineTo(6.4, -0.3); c.lineTo(0, 0.3); c.lineTo(-3.2, 0.3); c.closePath(); c.fill();
-      if (jaw > 0.3) { c.strokeStyle = col.accent; c.lineWidth = 0.8; c.beginPath(); c.moveTo(5.3, -0.4); c.lineTo(5.6, 1.6); c.stroke(); }  // fang
-      c.fillStyle = col.accent; c.beginPath(); c.arc(1.6, -1.4, 0.85, 0, TAU); c.fill();
-      c.restore();
-      c.save(); c.rotate(jaw * 0.75);
-      c.fillStyle = col.fig;
-      c.beginPath(); c.moveTo(-3.2, -0.2); c.lineTo(0, -0.2); c.lineTo(5.6, 0.3); c.lineTo(4.4, 1.6); c.lineTo(0.3, 2.6); c.lineTo(-3.2, 1.9); c.closePath(); c.fill();
-      c.restore();
-      if (tongue && jaw < 0.05) {  // a forked tongue flick
-        const L2 = 4.5 * Math.sin(Math.PI * (1 - tongue / 0.3)), wig = Math.sin(t * 60) * 0.4;
-        c.strokeStyle = col.accent; c.lineWidth = 0.9;
-        c.beginPath(); c.moveTo(6.2, 0.1); c.lineTo(6.2 + L2, wig); c.lineTo(7.4 + L2, wig - 1.2); c.moveTo(6.2 + L2, wig); c.lineTo(7.4 + L2, wig + 1.2); c.stroke();
-      }
-      if (gulp) {  // the glyph shrinking into the mouth
-        const q = clamp(gulp.t / 0.22);
-        c.globalAlpha = 1 - q; c.fillStyle = col.dim; c.font = `600 ${10.5 * (1 - 0.8 * q)}px ${col.mono}`;
-        c.fillText(gulp.g, lerp(6, 1, q) - gulp.w * (1 - 0.8 * q) / 2, 3 * (1 - q) + 1); c.globalAlpha = 1;
-      }
-      c.restore();
-      c.font = `600 10.5px ${col.mono}`;
-      for (const o of things) if (o.fly) { c.fillStyle = col.fig; c.fillText(o.g, o.x, G - o.hy + 4 + Math.sin(t * 6 + o.bob) * 1.4); }
-      dots(c, col, sparks);
-    }
-    return { step, draw, probe: () => ({ headX: pose.x, headY: pose.y, act: act?.kind, rattle, sheds: sheds.length }) };
   }
 
   // ---------- wizard: a grey wizard with a staff; glyphs shall not pass, or get zapped, levitated or set off as fireworks ----------
@@ -701,7 +538,7 @@
     return { step, draw, probe: () => ({ act: act?.kind, ws }) };
   }
 
-  const KINDS = { dragon, soccer, snake, wizard };
+  const KINDS = { dragon, soccer, wizard };
   window.CritterMakers = KINDS;  // for the preview page and tests
   for (const [name, make] of Object.entries(KINDS)) window.WorkAnim?.register(name, () => stage(make));
 })();
