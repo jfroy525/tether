@@ -88,7 +88,8 @@ def display_for(x: float, y: float) -> dict:
     return ds[0]
 
 
-NOT_WINDOWS = SKIP_OWNERS | {"AutoFill", "loginwindow", "UserNotificationCenter", "jamfRemoteAssistConnectorUI"}
+NOT_WINDOWS = SKIP_OWNERS | {"AutoFill", "loginwindow", "UserNotificationCenter", "jamfRemoteAssistConnectorUI",
+                              "WindowManager", "SystemUIServer", "TextInputMenuAgent", "CursorUIViewService", "universalAccessAuthWarn"}
 
 
 def list_windows() -> list[dict]:

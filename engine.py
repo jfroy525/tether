@@ -312,8 +312,6 @@ class Session:
         if self._restart_pending and not self.running_jobs():  # a model or effort switch that waited for a job
             self._restart_pending = False
             self.close()
-        if not self.alive:
-            self._start()
         content: list | str = text
         if images:
             content = [{"type": "image", "source": {"type": "base64", "media_type": im.get("media_type", "image/png"),
@@ -321,7 +319,23 @@ class Session:
             content.append({"type": "text", "text": text or "(see the attached image)"})
         if not self.title:
             self.title = (text or "Image").strip().splitlines()[0][:70]
-        self._send({"type": "user", "message": {"role": "user", "content": content}})
+        msg = {"type": "user", "message": {"role": "user", "content": content}}
+        try:
+            if not self.alive:
+                self._start()
+            self._send(msg)
+        except (OSError, ValueError):  # it stopped just as the message went in: start it again once
+            time.sleep(0.5)  # lets its last words reach _stderr
+            self.close()
+            try:
+                self._start()
+                self._send(msg)
+            except (OSError, ValueError):
+                time.sleep(0.5)
+                tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
+                self._set("exited")
+                raise RuntimeError("Claude Code stopped as soon as it started" + (f": {tail}" if tail else
+                                   ". Try running claude in Terminal to see why.")) from None
         self._set("running")
 
     FAST_REASONS = {"preference": "Fast mode has been disabled by your organization",
@@ -516,6 +530,7 @@ class Session:
             tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
             self._set("exited")
             if tail and proc.returncode not in (0, -15, None):
+                print(f"[claude] {self.sid[:8]} stopped ({proc.returncode}): {tail}", file=sys.stderr, flush=True)
                 self.emit({"type": "error", "sid": self.sid, "text": f"Claude Code stopped: {tail}"})
 
     def _event(self, e: dict) -> None:
