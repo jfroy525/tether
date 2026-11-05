@@ -23,6 +23,8 @@ open ~/Applications/Tether.app
 
 The build makes `~/Applications/Tether.app`, which runs the code in this folder. If you move the folder, run `zsh build_app.sh` again.
 
+The same icon glows when a newer Claude Code is out (checked against npm at most hourly); **Update Claude Code** runs `claude update`, which works for Homebrew, npm and the native installer. Open chats keep the old version until they restart. Settings › Updates shows this copy's version and the last check, or why it can't check (for example "Couldn't reach GitHub: …"), with **Check now**.
+
 **Report a problem:** red error lines in a chat have a **Report** link, and Settings › Advanced has **Report a problem**. Tether fills in a GitHub issue with its version, macOS, Claude Code's version, the chat's model, the error and the end of `~/Library/Logs/Tether.log`, with your user name replaced. You see and edit all of it first; it opens on GitHub, where you click Create. Issues are public, and chat text, files and pictures are never included.
 
 **Updates:** when a newer Tether is on GitHub, a glowing download icon appears next to the settings gear. Click it to see what changed, then **Update and restart**. If Claude is working in any chat, Tether waits until it's done, and the chats you had open come back after the restart. If you installed before the update icon existed, update once by hand: `cd ~/tether && git pull`, then quit Tether (⌘Q) and reopen it.
@@ -91,6 +93,7 @@ Settings (⌘,) holds the hotkeys, mic, speech model, work words for dictation, 
 - `voice.py`: dictation · `screen.py`, `markup.html`: screenshots, marks and reading text on screen · `lift.py`: tables lifted onto the Shelf
 - `recall.py`: the per-session search index and the Haiku lookup · `notes.py`: running notes · `slim.py`: removes old screenshots from transcripts
 - `notifier.py`: Mac notifications · `boot/`: starts Tether when Tether.app runs Python as its own program, so macOS shows notifications as Tether's
+- `cc_update.py`: compares the installed Claude Code with the newest on npm and runs `claude update`
 - `updater.py`: checks GitHub for a newer Tether (at most every hour), moves this folder to GitHub's version (setting aside any local edits in git) and restarts
 - `wb_mcp.py`: tools for Claude (look_at_screen, list_windows, mark_up_screen, show_table, show_artifact, recall, session_notes)
 - `artifacts.py`: the Shelf's versions and which chat showed each (in the support folder, never the project), sealed pages, changed lines · `artifact_snap.py`: draws a page off screen for Claude to look at

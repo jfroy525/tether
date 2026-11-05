@@ -1539,7 +1539,7 @@ function onEvent(ev) {
     case "result": if (S) thinkDone(S);
       if (S) {
         thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false;
-        if (!ev.ok && ev.error) add(S, el("div", "err", esc(ev.error)));
+        if (!ev.ok && ev.error) add(S, errRow(S, ev.error));
         const bits = [ev.ok ? "Done" : (ev.subtype || "Stopped")];
         if (ev.seconds) bits.push(`${ev.seconds}s`);
         add(S, el("div", "footnote", bits.join(" · ")));
@@ -2450,7 +2450,7 @@ async function send() {
   const m = addUser(S, text, images, false);
   (S.pending ||= []).push({ text: text || (images.length ? "(see the attached image)" : ""), el: m });
   const r = await api().send(S.sid, text, images.map(({ data, media_type }) => ({ data, media_type })));
-  if (r && r.error) add(S, el("div", "err", esc(r.error)));
+  if (r && r.error) add(S, errRow(S, r.error));
   renderSidebar();
 }
 
@@ -2522,7 +2522,7 @@ function sendHeld(S, q, now) {
     S.status = "running";  // until Claude says so, so a message you send next waits behind this one
   }
   (S.pending ||= []).push({ text: q.text || (q.images.length ? "(see the attached image)" : ""), el: m });
-  api().send(S.sid, q.text, imgs(q)).then(r => { if (r && r.error) add(S, el("div", "err", esc(r.error))); });
+  api().send(S.sid, q.text, imgs(q)).then(r => { if (r && r.error) add(S, errRow(S, r.error)); });
 }
 function flushHeld(S) {
   if (["running", "waiting", "starting"].includes(S.status)) return;
@@ -3397,6 +3397,8 @@ async function settingsDialog() {
     ${sec("Shelf", row("Show items from", `<select data-k="shelf_hours">${opts([["24", "The last day"], ["72", "The last 3 days"], ["168", "The last week"], ["0", "The whole chat"]], String(s.shelf_hours ?? 24))}</select>`, "Older ones wait under Earlier in the Shelf's item menu"))}
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
+    ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
+      + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed"))}
     <section class="set-sec"><h3>Advanced</h3>
       ${row("Stream Claude's thinking", sw("show_thinking", s.show_thinking), "Applies to sessions started after you change it")}
       ${row("Speech model", `<select data-k="whisper_model">${opts([["tiny", "Tiny (fastest)"], ["base", "Base"], ["small", "Small"], ["medium", "Medium (most accurate)"]], s.whisper_model)}</select>`)}
@@ -3411,6 +3413,9 @@ async function settingsDialog() {
   sheetNav(box);
   box.querySelectorAll("[data-mac]").forEach(b => b.onclick = () => api().open_mac_settings(b.dataset.mac));
   box.querySelector("#report-btn").onclick = () => reportProblem(state.active || "");
+  renderUpdRow();
+  if (!upd.last) checkUpdate();
+  box.querySelector("#upd-check").onclick = async e => { e.target.disabled = true; $("#upd-line").textContent = "Checking…"; await checkUpdate(true); e.target.disabled = false; };
   box.querySelector("#fast-recheck")?.addEventListener("click", async e => {
     state.settings = await api().save_settings({ fast_unavailable: "" });
     e.target.closest(".setrow").remove();
@@ -3656,28 +3661,70 @@ function wire() {
 }
 
 // ---------- updates: a glowing icon in the sidebar when GitHub has a newer Tether ----------
-const upd = { info: null, waiting: false, timer: 0 };
+const upd = { info: null, waiting: false, timer: 0, cc: null, ccBusy: false };
 async function checkUpdate(force = false) {
-  const r = await api().update_status(force).catch(() => null);
+  const [r, cc] = await Promise.all([api().update_status(force).catch(() => null), api().claude_status(force).catch(() => null)]);
   if (r && r.ok) upd.info = r;
+  upd.last = r;
+  if (cc) upd.cc = cc;
+  renderUpdRow();
   const b = $("#update-btn");
-  b.hidden = !(upd.info?.behind > 0);
+  b.hidden = !(upd.info?.behind > 0 || upd.cc?.newer);
   b.classList.toggle("wait", upd.waiting);
   b.title = b.ariaLabel = upd.waiting ? "Updating when chats finish" : "Update available";
 }
+function ccLine() {  // "Claude Code 2.1.312 → 2.1.318" with its own Update button
+  const c = upd.cc || {};
+  return `<div class="upd-cc"><span>Claude Code ${esc(c.installed)} → ${esc(c.latest)}</span><button class="btn ghost small" data-cc>Update Claude Code</button></div>`;
+}
+function wireCc(box) { box.querySelector("[data-cc]")?.addEventListener("click", e => runClaudeUpdate(e.target)); }
+async function runClaudeUpdate(btn) {
+  if (upd.ccBusy) return;
+  upd.ccBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = "Updating…"; }
+  const r = await api().claude_update().catch(e => ({ ok: false, why: String(e) }));
+  upd.ccBusy = false;
+  if (r.ok) toast(`Claude Code is now ${r.installed || "up to date"}. New chats use it; open chats switch when they restart.`);
+  else toast(`Couldn't update Claude Code: ${r.why}`, "error");
+  if (btn) { btn.disabled = false; btn.textContent = r.ok ? "Updated" : "Try again"; }
+  await checkUpdate(true);
+}
 function updateDialog() {
   const i = upd.info || {};
+  if (!(i.behind > 0)) {  // only Claude Code is new
+    const box = openModal(`<h2>Update Claude Code</h2>${ccLine()}<p class="modal-p">Runs claude update. Open chats keep the old version until they restart.</p>
+      <div class="modal-acts"><button class="btn ghost" data-close>Close</button></div>`);
+    wireCc(box);
+    return;
+  }
   const list = (i.changes || []).map(c => `<li>${esc(c)}</li>`).join("") + (i.more ? `<li>and ${i.more} more</li>` : "");
   const kept = i.dirty || i.ahead ? " Changes made to Tether's files on this Mac are set aside in git." : "";
-  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.${kept}</p>
+  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.${kept}</p>${upd.cc?.newer ? ccLine() : ""}
     <div class="modal-acts"><button class="btn ghost" data-k="no">${upd.waiting ? "Don't update" : "Cancel"}</button><button class="btn primary" data-k="yes" id="upd-go">Update and restart</button></div>`);
   api().update_busy().then(n => {
     if (!n) return;
     $("#upd-p").textContent = `${n === 1 ? "A chat is" : n + " chats are"} still working. Tether updates when ${n === 1 ? "it finishes" : "they finish"}, then restarts. Open chats come back.${kept}`;
     $("#upd-go").textContent = upd.waiting ? "Keep waiting" : `Update when ${n === 1 ? "it finishes" : "they finish"}`;
   });
+  wireCc(box);
   box.querySelector('[data-k="no"]').onclick = () => { if (upd.waiting) stopWaiting(); closeModal(); };
   box.querySelector('[data-k="yes"]').onclick = () => { closeModal(); runUpdate(); };
+}
+function renderUpdRow() {  // Settings › Updates: this copy's version and the last check, or why it can't check
+  const line = $("#upd-line"); if (!line) return;
+  const r = upd.last, at = r?.checked ? new Date(r.checked * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  const ver = r?.current ? `${esc(r.current)} · ` : "";
+  line.innerHTML = !r ? "Checking…"
+    : !r.ok ? `${ver}<span class="upd-bad">${esc(r.why || "Couldn't check")}</span>`
+    : r.behind ? `${ver}<button class="btn ghost small" id="upd-open">Update ready</button>`
+    : `${ver}Up to date${at ? ` · checked ${at}` : ""}`;
+  $("#upd-open")?.addEventListener("click", updateDialog);
+  const cl = $("#cc-line"); if (!cl) return;
+  const c = upd.cc;
+  cl.innerHTML = !c ? "Checking…" : !c.ok ? `<span class="upd-bad">${esc(c.why || "Couldn't check")}</span>`
+    : c.newer ? `${esc(c.installed)} · <button class="btn ghost small" id="cc-go">${upd.ccBusy ? "Updating…" : `Update to ${esc(c.latest)}`}</button>`
+    : `${esc(c.installed)} · Up to date`;
+  $("#cc-go")?.addEventListener("click", e => runClaudeUpdate(e.target));
 }
 function stopWaiting() { upd.waiting = false; clearTimeout(upd.timer); checkUpdate(); }
 async function runUpdate() {

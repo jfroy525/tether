@@ -49,6 +49,41 @@ def artifact_info(inp: dict, cwd: str) -> dict:
     return {"path": str(p), "short": short(str(p)), "title": str(inp.get("title") or p.name)[:120], "note": str(inp.get("note") or "")[:120]}
 
 
+# Older Claude Code versions don't know every option Tether passes. Optional ones are left out when the installed
+# version's --help doesn't list them, or after it stopped with "unknown option" (remembered until Tether restarts).
+OPTIONAL_FLAGS = {"--permission-prompts": 1, "--thinking-display": 1, "--effort": 1, "--include-partial-messages": 0}
+_unknown_flags: dict[str, set[str]] = {}  # claude binary -> options it refused
+_help_cache: dict[str, str] = {}
+
+
+def drop_unknown(binary: str, cmd: list[str]) -> list[str]:
+    """cmd without the optional options this claude can't take (each with its value, if it has one)."""
+    if binary not in _help_cache:
+        try:
+            _help_cache[binary] = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=15).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            _help_cache[binary] = ""
+    helptext, refused = _help_cache[binary], _unknown_flags.get(binary, set())
+    # --thinking-display isn't listed in --help even where it works, so only a refusal drops it
+    drop = {f for f in OPTIONAL_FLAGS if f in refused or (helptext and f != "--thinking-display" and f not in helptext)}
+    out, i = [], 0
+    while i < len(cmd):
+        if cmd[i] in drop:
+            i += 1 + OPTIONAL_FLAGS[cmd[i]]
+            continue
+        out.append(cmd[i]); i += 1
+    return out
+
+
+def note_unknown(binary: str, text: str) -> str | None:
+    """Remember an option this claude refused; returns it if it's one Tether can do without."""
+    m = re.search(r"unknown option '(--[\w-]+)'", text or "")
+    if m and m.group(1) in OPTIONAL_FLAGS:
+        _unknown_flags.setdefault(binary, set()).add(m.group(1))
+        return m.group(1)
+    return None
+
+
 def find_claude(configured: str = "") -> str | None:
     for c in [configured, shutil.which("claude") or "", *SEARCH_PATHS]:
         p = Path(c).expanduser() if c else None
@@ -247,6 +282,8 @@ class Session:
                if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_AGENT_SDK_VERSION")}
         env["PATH"] = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local/bin"),
                                        "/usr/bin", "/bin", "/usr/sbin", "/sbin", env.get("PATH", "")])
+        cmd = drop_unknown(binary, cmd)
+        self._binary = binary
         self._set("starting")
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, bufsize=1, cwd=self.cwd, env=env)
@@ -283,6 +320,7 @@ class Session:
             self._job_end(j["task_id"], "stopped", "Stopped when Tether closed Claude for this chat")
         p, self.proc = self.proc, None
         if p:
+            p.tether_closed = True  # Tether stopped it on purpose: its exit is not an error
             try:
                 p.stdin.close()
                 p.terminate()
@@ -536,7 +574,13 @@ class Session:
         if proc is self.proc or self.proc is None:
             tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
             self._set("exited")
-            if rc not in (0, -15, None):
+            flag = note_unknown(getattr(self, "_binary", ""), tail) if rc not in (0, -15, 143, None) and not getattr(proc, "tether_closed", False) else None
+            if flag:
+                print(f"[claude] {self.sid[:8]} older Claude Code doesn't know {flag}; leaving it out", file=sys.stderr, flush=True)
+                self.emit({"type": "notice", "sid": self.sid, "text": f"Your Claude Code is older and doesn't know {flag}. "
+                           "Tether leaves it out from now on, so send your message again. Updating Claude Code in Settings › Updates also fixes it."})
+                return
+            if rc not in (0, -15, 143, None) and not getattr(proc, "tether_closed", False):
                 print(f"[claude] {self.sid[:8]} stopped ({rc}): {tail or 'no message'} · cwd {self.cwd}", file=sys.stderr, flush=True)
                 self.emit({"type": "error", "sid": self.sid, "text": f"Claude Code stopped: {tail}" if tail else
                            f"Claude Code stopped with code {rc} and no message. Run claude in Terminal in this chat's folder to see why."})

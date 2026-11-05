@@ -36,6 +36,7 @@ import rightclick
 import notifier
 import mini
 import updater
+import cc_update
 import screen
 import lift
 import voice
@@ -2065,6 +2066,14 @@ class Api:
         mini.run(n, to, lambda: n.setMinSize_(AppKit.NSSize(*(MINI_MIN if self._mini_on else FULL_MIN))))
 
     # ---------- updates from GitHub ----------
+    def claude_status(self, force=False):
+        return cc_update.status(engine.find_claude(self.settings.get("claude_path", "")), bool(force))
+
+    def claude_update(self):
+        """Open chats keep the Claude Code they started with until they restart; new ones use the new version."""
+        b = engine.find_claude(self.settings.get("claude_path", ""))
+        return cc_update.update(b) if b else {"ok": False, "why": "Claude Code isn't installed"}
+
     def update_status(self, force=False):
         return updater.status(bool(force))
 

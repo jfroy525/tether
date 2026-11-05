@@ -21,20 +21,48 @@ def _git(*args: str, timeout: float = 30) -> tuple[int, str]:
     return repos._run(["git", *args], str(HERE), timeout)
 
 
+def _fetch() -> str:
+    """Ask GitHub for main; '' when it worked, else git's first error line (a proxy, no git tools, no network)."""
+    env = {"PATH": f"{Path(repos.GIT).parent}:{repos.ENV_PATH}" if "/" in repos.GIT else repos.ENV_PATH,
+           "HOME": str(Path.home()), "GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": "ssh -oBatchMode=yes",
+           **{k: v for k, v in os.environ.items() if k.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy")}}
+    try:
+        p = subprocess.run([repos.GIT, "fetch", "--quiet", "origin", "main"], cwd=HERE, env=env,
+                           capture_output=True, text=True, timeout=45)
+    except FileNotFoundError:
+        return "git isn't installed"
+    except subprocess.TimeoutExpired:
+        return "GitHub didn't answer within 45 seconds"
+    if p.returncode == 0:
+        return ""
+    lines = [l.strip() for l in (p.stderr or "").splitlines() if l.strip()]
+    first = lines[0].removeprefix("fatal: ").removeprefix("error: ") if lines else f"git stopped with code {p.returncode}"
+    return first[:200]
+
+
+def current() -> str:
+    """This copy's version, like '73ed16d · 2026-11-05'."""
+    return _git("log", "-1", "--format=%h · %cs")[1].strip() if (HERE / ".git").exists() else ""
+
+
 def status(force: bool = False) -> dict:
     """{behind, ahead, dirty, changes}: commits on GitHub's main not here yet, and whether this copy can take them."""
     if not (HERE / ".git").exists():
-        return {"ok": False, "why": "This copy of Tether wasn't installed with git, so it can't update itself."}
+        return {"ok": False, "why": "This copy wasn't installed with git clone, so it can't update itself.", "current": ""}
     if not force and _last["res"] and time.time() - _last["at"] < EVERY:
         return _last["res"]
-    code, _ = _git("fetch", "--quiet", "origin", "main", timeout=45)
-    if code:
-        return _last["res"] or {"ok": False, "why": "Couldn't reach GitHub."}
+    err = _fetch()
+    if err:
+        res = {"ok": False, "why": f"Couldn't reach GitHub: {err}", "current": current(), "checked": time.time()}
+        if not _last["res"] or not _last["res"].get("ok"):
+            _last.update(at=time.time(), res=res)
+        return res
     n = lambda rng: int((_git("rev-list", "--count", rng)[1].strip() or "0"))  # noqa: E731
     behind, ahead = n("HEAD..origin/main"), n("origin/main..HEAD")
     dirty = bool(_git("status", "--porcelain", "--untracked-files=no")[1].strip())
     log = _git("log", "--format=%s", "HEAD..origin/main")[1].splitlines() if behind else []
-    res = {"ok": True, "behind": behind, "ahead": ahead, "dirty": dirty, "changes": log[:12], "more": max(0, len(log) - 12)}
+    res = {"ok": True, "behind": behind, "ahead": ahead, "dirty": dirty, "changes": log[:12], "more": max(0, len(log) - 12),
+           "current": current(), "checked": time.time()}
     _last.update(at=time.time(), res=res)
     return res
 
