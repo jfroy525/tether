@@ -89,7 +89,7 @@ Settings (⌘,) holds the hotkeys, mic, speech model, work words for dictation, 
 - `voice.py`: dictation · `screen.py`, `markup.html`: screenshots, marks and reading text on screen · `lift.py`: tables lifted onto the Shelf
 - `recall.py`: the per-session search index and the Haiku lookup · `notes.py`: running notes · `slim.py`: removes old screenshots from transcripts
 - `notifier.py`: Mac notifications · `boot/`: starts Tether when Tether.app runs Python as its own program, so macOS shows notifications as Tether's
-- `updater.py`: checks GitHub for a newer Tether (at most every 6 hours), updates this folder and restarts
+- `updater.py`: checks GitHub for a newer Tether (at most every hour), moves this folder to GitHub's version (setting aside any local edits in git) and restarts
 - `wb_mcp.py`: tools for Claude (look_at_screen, list_windows, mark_up_screen, show_table, show_artifact, recall, session_notes)
 - `artifacts.py`: the Shelf's versions and which chat showed each (in the support folder, never the project), sealed pages, changed lines · `artifact_snap.py`: draws a page off screen for Claude to look at
 - `ui/`: the page (`app.js`, `markdown.js`, `runner.js` and `critters.js` for the working-line animations, `app.css` for the Float glass layout) · `make_icon.py`: the Tether icon

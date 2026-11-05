@@ -13,7 +13,7 @@ from pathlib import Path
 import repos
 
 HERE = Path(__file__).resolve().parent
-EVERY = 6 * 3600  # GitHub is asked at most this often, unless you check by hand
+EVERY = 3600  # GitHub is asked at most this often, unless you check by hand
 _last: dict = {"at": 0.0, "res": None}
 
 
@@ -59,20 +59,33 @@ def _packages() -> bool:
 
 
 def apply() -> dict:
-    """Fast-forward to GitHub's main. Nothing changes unless every step works; local edits are never touched."""
+    """Move this folder to GitHub's main, which is the source of truth. Edits or commits made on this Mac are
+    set aside first (a git stash and a tether-local-<time> branch), so nothing is lost; if a step fails, it goes back."""
     s = status(force=True)
     if not s.get("ok"):
         return {"error": s.get("why") or "Couldn't check for updates."}
     if not s.get("behind"):
         return {"error": "Tether is already up to date."}
-    if s.get("dirty") or s.get("ahead"):
-        return {"error": "Tether's own files were changed on this Mac, so it can't update by itself."}
     old = _git("rev-parse", "HEAD")[1].strip()
-    files = _git("diff", "--name-only", "HEAD", "origin/main")[1].split()
-    if _git("merge", "--ff-only", "--quiet", "origin/main")[0]:
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    if s.get("ahead"):
+        _git("branch", f"tether-local-{stamp}", old)
+    stashed = False
+    if s.get("dirty"):
+        if _git("stash", "push", "--quiet", "-m", f"Tether: set aside before update {stamp}")[0]:
+            return {"error": "Couldn't set aside the changes made on this Mac. Nothing was changed."}
+        stashed = True
+    files = _git("diff", "--name-only", old, "origin/main")[1].split()
+
+    def back() -> None:
+        _git("reset", "--hard", "--quiet", old)
+        if stashed:
+            _git("stash", "pop", "--quiet")
+    if _git("reset", "--hard", "--quiet", "origin/main")[0]:
+        back()
         return {"error": "Couldn't apply the update. Nothing was changed."}
     if "requirements.txt" in files and not _packages():
-        _git("reset", "--keep", old)
+        back()
         return {"error": "Couldn't install the new packages, so Tether stayed on the version you had."}
     _last["res"] = None
     return {"ok": True, "rebuild": "build_app.sh" in files}

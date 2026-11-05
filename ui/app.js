@@ -2582,8 +2582,7 @@ async function fillModels() {
   sel.innerHTML = `<option value="">Default model</option>` + state.models.filter(m => m.value !== "default").map(m =>
     `<option value="${esc(m.value)}" title="${esc(m.description || "")}">${esc(m.displayName || m.value)}</option>`).join("");
   const S = state.open.get(state.active);
-  if (S) sel.value = S.model || "";
-  syncRun();
+  if (S) { sel.value = S.model || ""; syncModes(S); } else syncRun();  // the Fast button follows the model list too
 }
 
 // ---------- repo bar + panel ----------
@@ -2852,12 +2851,19 @@ async function renderPanel(fresh) {
 
 // ---------- permission mode and fast mode ----------
 const MODES = ["auto", "acceptEdits", "plan", "manual"];  // ⇧Tab cycles these; Don't ask and Bypass are picked on purpose
+// Fast mode only exists for Opus: the chat's model, or for Default the model it currently stands for
+function fastFits(S) {
+  const v = S.model || "";
+  if (v) { const o = [...$("#model-sel").options].find(x => x.value === v); return /opus/i.test(`${v} ${o?.title || ""} ${o?.textContent || ""}`); }
+  const d = state.models.find(m => m.value === "default");
+  return !d || /opus/i.test(d.description || "");
+}
 function syncModes(S) {
   const sel = $("#mode-sel");
   sel.value = S.modes.permission || S.permMode || state.settings.perm_mode || "auto";
   syncRun();
   const fb = $("#fast-btn"), blocked = S.fast && (S.modes.fast === "off" || !!S.modes.fast_reason);
-  fb.hidden = !!state.settings.fast_unavailable;  // this account can't use it: no button (Settings › Advanced can check again)
+  fb.hidden = !!state.settings.fast_unavailable || !fastFits(S);  // this account can't use it (Settings › Advanced can check again), or not Opus
   fb.classList.toggle("on", S.fast && !blocked);
   fb.classList.toggle("blocked", !!blocked);
   fb.title = blocked ? `${S.modes.fast_reason || "Fast mode isn't available for this account"}. Tether will use it if that changes.` : S.fast ? "Fast mode is on" : "Fast mode: same model, faster output";
@@ -3535,7 +3541,7 @@ function wire() {
     was?.remove();  // clicking through effort levels: one line, updated
     const n = add(S, switchLine(line));
     n.from = from;
-    syncRun();
+    syncModes(S);
   };
   const input = $("#input");
   input.addEventListener("input", () => { autogrow(); updateSlash(); const S = state.open.get(state.active); if (S) syncComposer(S); });
@@ -3640,17 +3646,12 @@ async function checkUpdate(force = false) {
 function updateDialog() {
   const i = upd.info || {};
   const list = (i.changes || []).map(c => `<li>${esc(c)}</li>`).join("") + (i.more ? `<li>and ${i.more} more</li>` : "");
-  if (i.dirty || i.ahead) {
-    const box = openModal(`<h2>Update Tether</h2><p class="modal-p">Tether's own files were changed on this Mac, so it can't update by itself.</p>
-      <div class="modal-acts"><button class="btn primary" data-k="ok">OK</button></div>`);
-    box.querySelector("[data-k]").onclick = closeModal;
-    return;
-  }
-  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.</p>
+  const kept = i.dirty || i.ahead ? " Changes made to Tether's files on this Mac are set aside in git." : "";
+  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.${kept}</p>
     <div class="modal-acts"><button class="btn ghost" data-k="no">${upd.waiting ? "Don't update" : "Cancel"}</button><button class="btn primary" data-k="yes" id="upd-go">Update and restart</button></div>`);
   api().update_busy().then(n => {
     if (!n) return;
-    $("#upd-p").textContent = `${n === 1 ? "A chat is" : n + " chats are"} still working. Tether updates when ${n === 1 ? "it finishes" : "they finish"}, then restarts. Open chats come back.`;
+    $("#upd-p").textContent = `${n === 1 ? "A chat is" : n + " chats are"} still working. Tether updates when ${n === 1 ? "it finishes" : "they finish"}, then restarts. Open chats come back.${kept}`;
     $("#upd-go").textContent = upd.waiting ? "Keep waiting" : `Update when ${n === 1 ? "it finishes" : "they finish"}`;
   });
   box.querySelector('[data-k="no"]').onclick = () => { if (upd.waiting) stopWaiting(); closeModal(); };
