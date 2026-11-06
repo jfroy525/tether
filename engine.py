@@ -285,6 +285,8 @@ class Session:
         cmd = drop_unknown(binary, cmd)
         self._binary = binary
         self._set("starting")
+        self._unread = 0  # your messages Claude hasn't taken in yet (each comes back as an isReplay echo)
+        self._held = None  # a finish signal from a turn Claude ran on its own while one of yours was waiting
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, bufsize=1, cwd=self.cwd, env=env)
         self.resume = True  # from now on it exists on disk
@@ -362,12 +364,14 @@ class Session:
             if not self.alive:
                 self._start()
             self._send(msg)
+            self._unread += 1
         except (OSError, ValueError):  # it stopped just as the message went in: start it again once
             time.sleep(0.5)  # lets its last words reach _stderr
             self.close()
             try:
                 self._start()
                 self._send(msg)
+                self._unread += 1
             except (OSError, ValueError):
                 time.sleep(0.5)
                 tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
@@ -560,6 +564,12 @@ class Session:
         for line in proc.stderr:
             self._stderr = (self._stderr + [line.rstrip()])[-30:]
 
+    def _release_held(self, held) -> None:
+        """Safety net: nothing came for 30 s after a held finish signal, so it was the end after all."""
+        if self._held is held and time.time() - self.last_own >= 29:
+            self._held, self._unread = None, 0
+            self._event(held[0])
+
     def _read_out(self, proc) -> None:
         for line in proc.stdout:
             self.last_own = time.time()
@@ -701,6 +711,8 @@ class Session:
             return
         if kind == "user" and e.get("isReplay"):  # Claude just took in one of your messages (a queued one: mid-turn)
             if not e.get("parent_tool_use_id"):
+                self._unread = max(0, getattr(self, "_unread", 1) - 1)
+                self._held = None
                 c = e.get("message", {}).get("content")
                 text = c if isinstance(c, str) else " ".join(b.get("text", "") for b in c or [] if isinstance(b, dict) and b.get("type") == "text")
                 self.emit({"type": "delivered", "sid": sid, "text": text})
@@ -748,6 +760,12 @@ class Session:
             for rid in list(self.pending):  # nothing left to ask about
                 self.pending.pop(rid, None)
                 self.emit({"type": "permission_done", "sid": sid, "rid": rid, "choice": "gone"})
+            if getattr(self, "_unread", 0) > 0:
+                # a turn Claude ran on its own (say, a notice about background commands stopped by a restart) ended
+                # before it took in your message: yours is still coming, so this doesn't end it
+                self._held = (e, time.time())
+                threading.Timer(30, self._release_held, (self._held,)).start()
+                return
             self.emit({"type": "result", "sid": sid, "ok": not e.get("is_error"), "subtype": e.get("subtype"),
                        "error": str(e.get("result") or "; ".join(map(str, e.get("errors") or [])))[:400] if e.get("is_error") else "",
                        "cost": e.get("total_cost_usd"), "seconds": round((e.get("duration_ms") or 0) / 1000, 1)})
