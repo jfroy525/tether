@@ -2,7 +2,7 @@
 
 A Mac app for Claude Code. Each chat runs your own `claude` CLI, so your login, CLAUDE.md, skills, MCP servers and permission mode all apply, and sessions stay compatible with the terminal and VS Code. Tether adds what the terminal can't: voice input, circling things on screen, clickable file paths, a Shelf for pages Claude makes, approvals docked above the message box, and long chats that keep going with notes instead of compaction.
 
-See the [one-page tour](https://htmlpreview.github.io/?https://github.com/jfroy525/tether/blob/main/docs/features.html) of what it does.
+See [the highlights](https://htmlpreview.github.io/?https://github.com/jfroy525/tether/blob/main/docs/highlights.html) for the main features, or the [one-page tour](https://htmlpreview.github.io/?https://github.com/jfroy525/tether/blob/main/docs/features.html) for everything it does.
 
 ## Install
 

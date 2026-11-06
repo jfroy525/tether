@@ -831,21 +831,24 @@ function artifactLine(S, a) {
 }
 function onArtifact(S, ev) {
   const known = (S.viewItems || []).some(it => it.path === ev.path);
-  S.viewLive = [...(S.viewLive || []).filter(x => x.path !== ev.path), { path: ev.path, short: ev.short, title: ev.title, from: "claude", type: VIEW_TYPE_OF(ev.path) }];
+  S.viewLive = [...(S.viewLive || []).filter(x => x.path !== ev.path), { path: ev.path, short: ev.short, title: ev.title, from: "claude", type: VIEW_TYPE_OF(ev.path), ts: Date.now() / 1000 }];
+  const pickNew = () => { S.viewSel = ev.path; S.viewN = 0; S.viewBase = null; };  // the newest thing Claude showed is what you see next
   loadView(S).then(() => {
-    if (S.sid !== state.active) { S.viewDot = true; return; }
+    if (S.sid !== state.active) { pickNew(); S.viewDot = true; return; }
     const showing = state.panel && state.tab === "view";
     if (showing && S.viewSel === ev.path) return renderView(S, $("#panel-body"), true);
     if (showing || (!state.panel && !S.viewAuto) || !known) { S.viewAuto = true; openInView(S, ev.path, { auto: !showing && state.panel }); }
-    else { S.viewDot = true; syncViewTab(); }
+    else { pickNew(); S.viewDot = true; syncViewTab(); }
   });
 }
+// the most recently shown or opened item; one Claude just showed counts as newest
+const newestItem = items => items.reduce((a, x) => ((x.ts || 0) >= (a.ts || 0) ? x : a), items[0]);
 // what's on screen in the View tab, so polling and redraws know what changed
 const viewShown = { sid: null, path: null, mtime: 0, size: 0, n: 0, scroll: [0, 0], mode: "file" };
 async function renderView(S, body, refresh) {
   const items = S.viewItems || await loadView(S);
   if (!items.length) return renderShelfEmpty(S, body);
-  const it = items.find(x => x.path === S.viewSel) || items[items.length - 1];
+  const it = items.find(x => x.path === S.viewSel) || newestItem(items);  // what you had is gone: the newest, not the end of the list
   S.viewSel = it.path; S.viewDot = false; syncViewTab();
   const same = viewShown.sid === S.sid && viewShown.path === it.path;
   if (!same) { viewShown.scroll = [0, 0]; viewShown.mode = "file"; }
