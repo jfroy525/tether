@@ -605,6 +605,9 @@ class Session:
         kind = e.get("type")
         sid = self.sid
         parent = e.get("parent_tool_use_id")
+        if kind in ("assistant", "stream_event") and not parent and self.status == "idle":
+            # Claude started a turn by itself (a background job ended and woke it): show it working until its finish signal
+            self._set("running")
         if kind == "control_response":
             r = e.get("response", {})
             if str(r.get("request_id", "")).startswith("mcp_"):
