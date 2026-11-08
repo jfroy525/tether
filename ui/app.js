@@ -3127,6 +3127,11 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   if (!["dark", "light"].includes(state.settings.theme) && $("#modal").hidden) applyTheme(state.settings.theme);
 });
 const TEXT_SIZES = [90, 100, 110, 125, 140, 160];
+const CHAT_WIDTHS = [[720, "Narrow"], [860, "Medium (default)"], [1040, "Wide"], [1280, "Wider"], [0, "Full window"]];
+function applyWidth(w) {  // how wide the chat text and message box may grow; 0 = the whole chat pane
+  const n = Number(w ?? 860);
+  document.documentElement.style.setProperty("--read", (n > 0 ? n : 100000) + "px");
+}
 function applyText(size, boldAccent) {
   document.documentElement.style.setProperty("--fs-scale", String((Number(size) || 100) / 100));
   document.body.classList.toggle("bold-accent", !!boldAccent);
@@ -3436,7 +3441,7 @@ function openModal(html) {
   box.querySelectorAll("[data-close]").forEach(b => b.onclick = closeModal);
   return box;
 }
-function closeModal() { $("#modal").hidden = true; $(".modal-box").classList.remove("sheet"); applyTheme(state.settings.theme); applyText(state.settings.text_size, state.settings.bold_accent); }
+function closeModal() { $("#modal").hidden = true; $(".modal-box").classList.remove("sheet"); applyTheme(state.settings.theme); applyText(state.settings.text_size, state.settings.bold_accent); applyWidth(state.settings.chat_width); }
 
 async function settingsDialog() {
   const { settings: s, hotkeys, mics } = await api().get_settings();
@@ -3463,6 +3468,7 @@ async function settingsDialog() {
       + (mac.screen === false && s.glass_adapt !== false ? macOff("Needs Screen Recording", "screen") : "")
       + row("Accent color", `<span class="accent-pick"><input type="color" data-accent value="${esc(s.accent || "#0B6E86")}"><input type="text" class="mono" data-k="accent" value="${esc(s.accent || "")}" placeholder="Default" spellcheck="false"><button class="btn ghost small" data-accent-reset ${s.accent ? "" : "hidden"}>Default</button></span>`, "Any color. Tether shades it for light and dark so text and buttons stay readable")
       + row("Text size", `<select data-k="text_size">${opts(TEXT_SIZES.map(v => [String(v), v === 100 ? "100% (default)" : v + "%"]), String(s.text_size ?? 100))}</select>`, "Every font in the window. ⌘+ and ⌘− step it, ⌘0 resets")
+      + row("Chat width", `<select data-k="chat_width">${opts(CHAT_WIDTHS.map(([v, l]) => [String(v), l]), String(s.chat_width ?? 860))}</select>`, "How wide replies and the message box can grow. Wider means smaller side margins on a big window")
       + row("Color bold words", sw("bold_accent", s.bold_accent !== false), "Bold words in Claude's replies take the accent color, so the key points stand out. Links get an underline to stay distinct")
       + row("Reply animation", `<select data-k="reply_anim">${opts([["blur", "Blur in"], ["scan", "Scan line"], ["pop", "Pop through"], ["off", "Off"]], s.reply_anim || "blur")}</select>`, "How a reply lands: words come into focus, a glowing bar sweeps each line, or letters pop up through the glass, hang in the air and settle. Either way the whole reply is in within about a second and the chat glides with it. Your Mac's Reduce motion setting turns it off")
       + row("Text highlight", `<select data-k="select_anim">${opts([["glow", "Glow"], ["liquid", "Liquid"], ["marker", "Highlighter"], ["off", "No motion"]], s.select_anim || "glow")}</select>`, "When you select text: it glows as you let go, the highlight glides after your pointer, or the color paints across each line")
@@ -3516,12 +3522,13 @@ async function settingsDialog() {
   frostIn.disabled = !+glassIn.value;
   const previewText = () => applyText(box.querySelector("[data-k=text_size]").value, box.querySelector("[data-k=bold_accent]").checked);
   box.querySelector("[data-k=text_size]").onchange = box.querySelector("[data-k=bold_accent]").onchange = previewText;
+  box.querySelector("[data-k=chat_width]").onchange = e => applyWidth(e.target.value);
   box.querySelector("[data-close]").addEventListener("click", () => applyTheme(state.settings.theme));
   box.querySelector("[data-save]").onclick = async () => {
     const out = {};
     box.querySelectorAll("[data-k]").forEach(i => {
       const k = i.dataset.k;
-      out[k] = i.type === "checkbox" ? i.checked : ["mark_linger", "history_days", "auto_fresh", "text_size", "transparency", "frost"].includes(k) ? Number(i.value)
+      out[k] = i.type === "checkbox" ? i.checked : ["mark_linger", "history_days", "auto_fresh", "text_size", "chat_width", "transparency", "frost"].includes(k) ? Number(i.value)
         : k === "pinned" ? i.value.split("\n").map(x => x.trim()).filter(Boolean)
         : k === "accent" ? (/^#?[0-9a-f]{6}$/i.test(i.value.trim()) ? "#" + i.value.trim().replace("#", "").toUpperCase() : "") : i.value;
     });
@@ -3832,6 +3839,7 @@ window.addEventListener("pywebviewready", async () => {
   wire();
   applyTheme(r.settings.theme);
   applyText(r.settings.text_size, r.settings.bold_accent);
+  applyWidth(r.settings.chat_width);
   setView(r.settings.view || "full", false);
   showKeys();
   await loadHistory();

@@ -63,6 +63,7 @@ DEFAULTS = {
     "fast": False,
     "theme": "system",        # system | dark | light
     "text_size": 100,         # percent; scales every font size in the window
+    "chat_width": 860,        # px the chat text and message box may grow to; 0 = the whole chat pane
     "accent": "",             # "#RRGGBB" from Settings › Appearance; "" = the theme's teal
     "bold_accent": True,      # bold words in replies take the accent color
     "select_anim": "glow",    # selected text: "glow" (flashes as you let go), "liquid" (glides after the pointer), "marker" (paints each line) or "off"
