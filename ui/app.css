@@ -1203,6 +1203,13 @@ body.view-full .panel-head { padding-left: 86px; }  /* the traffic lights sit at
 #jobs-pop .jp-row:hover { background: var(--hover); }
 #jobs-pop .jp-row .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #jobs-pop .jp-row .t { flex: none; font-size: var(--fs-meta); color: var(--text-3); }
+#jobs-pop { max-height: 50vh; overflow-y: auto; }
+#jobs-pop .jp-row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#jobs-pop .jp-row .txt .lbl { flex: none; }
+#jobs-pop .jp-row .sub { font-size: var(--fs-meta); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#jobs-pop .jp-row .sub[hidden] { display: none; }
+.agent.flash > .ag-row { animation: ag-flash 1.6s ease-out; border-radius: var(--r-2); }
+@keyframes ag-flash { 0%, 30% { background: color-mix(in srgb, var(--accent) 18%, transparent); } 100% { background: transparent; } }
 .sess .m .st.job { color: var(--text-2); display: inline-flex; align-items: center; gap: 5px; }
 .nf-in a { color: var(--accent); text-decoration: none; cursor: pointer; }
 .nf-in a:hover { text-decoration: underline; }

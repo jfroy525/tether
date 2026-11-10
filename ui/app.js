@@ -553,35 +553,90 @@ setInterval(() => {  // timers every second; output every two, only for the chat
   }
   syncJobsNote();
 }, 1000);
-// "Running" above the message box, so a chat whose reply ended doesn't look finished while a job still runs
+// "Running" above the message box, so a chat whose reply ended doesn't look finished while agents or jobs still run
+const agLive = L => L.status === "running" || L.status === "starting";
+const agentsLive = S => [...(S?.agents?.values() || [])].filter(L => agLive(L) && L.el?.isConnected);
+const agMs = L => agLive(L) ? Date.now() - L.started : L.ms || 0;
 function syncJobsNote() {
   const box = $("#jobs-note"), S = state.open.get(state.active);
   if (!box) return;
-  const run = jobsRunning(S), ended = [...(S?.jobs?.values() || [])].filter(j => j.endedAt && Date.now() - j.endedAt < 60000).sort((a, b) => b.endedAt - a.endedAt);
-  if (!run.length && !ended.length) { box.hidden = true; $("#jobs-pop").hidden = true; return; }
+  const recent = x => x.endedAt && Date.now() - x.endedAt < 60000;
+  const run = jobsRunning(S), ags = agentsLive(S);
+  const ended = [...[...(S?.jobs?.values() || [])].filter(recent).map(j => ({ job: j, at: j.endedAt })),
+    ...[...(S?.agents?.values() || [])].filter(L => recent(L) && L.el?.isConnected).map(L => ({ ag: L, at: L.endedAt }))].sort((x, y) => y.at - x.at);
+  if (!run.length && !ags.length && !ended.length) { box.hidden = true; $("#jobs-pop").hidden = true; return; }
   box.hidden = false;
   let html;
-  if (run.length) {
-    html = `<span class="jring"></span><span class="w">${run.length === 1 ? "Running" : `${run.length} running`}</span><span class="lbl">· ${esc(run.map(j => j.description).join(", "))}${run.length === 1 ? ` · ${jobDur(run[0])}` : ""}</span>`;
+  if (run.length || ags.length) {
+    const n = ags.length + run.length;
+    const w = n === 1 ? (ags.length ? "Agent running" : "Running")
+      : [ags.length ? `${ags.length} ${ags.length === 1 ? "agent" : "agents"}` : "", run.length ? `${run.length} ${run.length === 1 ? "job" : "jobs"}` : ""].filter(Boolean).join(" · ") + " running";
+    const names = [...ags.map(L => L.desc), ...run.map(j => j.description)].join(", ");
+    const one = n === 1 ? ` · ${ags.length ? agDur(Math.max(agMs(ags[0]), 1000)) : jobDur(run[0])}` : "";
+    html = `<span class="jring"></span><span class="w">${w}</span><span class="lbl">· ${esc(names)}${one}</span>`;
+  } else if (ended[0].ag) {
+    const L = ended[0].ag, ok = L.status === "completed", fin = ended.filter(e => e.ag && Date.now() - e.at < 60000).length;
+    html = `<span class="jdot ${ok ? "ok" : "bad"}"></span><span class="w ${ok ? "ok" : "bad"}">${fin > 1 ? `${fin} agents finished` : ok ? "Agent done" : `Agent ${(AG_WORD[L.status] || L.status).toLowerCase()}`}</span><span class="lbl">· ${esc(fin > 1 ? ended.filter(e => e.ag).map(e => e.ag.desc).join(", ") : `${L.desc} · ${agDur(L.ms || 0)}`)}</span>`;
   } else {
-    const j = ended[0], ok = j.status === "completed" && !j.exit;
+    const j = ended[0].job, ok = j.status === "completed" && !j.exit;
     html = `<span class="jdot ${ok ? "ok" : j.status === "failed" ? "bad" : ""}"></span><span class="w ${ok ? "ok" : j.status === "failed" ? "bad" : ""}">${ok ? "Ended" : JOB_WORD[j.status] || j.status}</span><span class="lbl">· ${esc(j.description)} · ${j.exit ? `exit ${j.exit}` : jobDur(j)}</span>`;
   }
   if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+  const pop = $("#jobs-pop");
+  if (!pop.hidden) fillJobsPop(S);
   box.onclick = () => {
-    const A = state.open.get(state.active), list = [...jobsRunning(A), ...ended.filter(j => !jobsRunning(A).includes(j))];
-    if (list.length === 1) return showJob(A, list[0]);
-    const pop = $("#jobs-pop");
+    const A = state.open.get(state.active), list = jobsList(A);
+    if (list.length === 1) return list[0].ag ? showAgent(A, list[0].ag) : showJob(A, list[0].job);
     if (!pop.hidden) { pop.hidden = true; return; }
-    pop.innerHTML = "";
-    for (const j of list) {
-      const it = el("button", "jp-row", `<span class="${j.status === "running" ? "jring" : "jdot " + (j.status === "completed" && !j.exit ? "ok" : j.status === "failed" ? "bad" : "")}"></span><span class="lbl"></span><span class="t">${esc(j.status === "running" ? jobDur(j) : `${JOB_WORD[j.status] || j.status} · ${jobDur(j)}`)}</span>`);
-      it.querySelector(".lbl").textContent = j.description;
-      it.onclick = () => { pop.hidden = true; showJob(A, j); };
-      pop.appendChild(it);
-    }
+    fillJobsPop(A, true);
     pop.hidden = false;
   };
+}
+// running first (agents, then jobs), then whatever ended in the last minute
+function jobsList(S) {
+  const recent = x => x.endedAt && Date.now() - x.endedAt < 60000;
+  return [...agentsLive(S).map(ag => ({ ag })), ...jobsRunning(S).map(job => ({ job })),
+    ...[...(S?.agents?.values() || [])].filter(L => !agLive(L) && recent(L) && L.el?.isConnected).map(ag => ({ ag, at: ag.endedAt })),
+    ...[...(S?.jobs?.values() || [])].filter(j => j.status !== "running" && recent(j)).map(job => ({ job, at: job.endedAt }))];
+}
+function fillJobsPop(S, fresh) {
+  const pop = $("#jobs-pop"), list = jobsList(S);
+  if (!list.length) { pop.hidden = true; return; }
+  const key = list.map(x => (x.ag ? "a" + x.ag.id : "j" + x.job.task_id)).join(",");
+  if (fresh || pop.dataset.key !== key) {
+    pop.dataset.key = key; pop.innerHTML = "";
+    for (const x of list) {
+      const it = el("button", "jp-row" + (x.ag ? " ag" : ""), `<span class="ic"></span><span class="txt"><span class="lbl"></span><span class="sub"></span></span><span class="t"></span>`);
+      it.onclick = () => { pop.hidden = true; x.ag ? showAgent(S, x.ag) : showJob(S, x.job); };
+      x.row = it; pop.appendChild(it);
+    }
+    pop._list = list;
+  }
+  (pop._list || []).forEach((x, i) => {
+    const it = pop.children[i]; if (!it) return;
+    let ic, lbl, sub = "", t;
+    if (x.ag) {
+      const L = x.ag, live = agLive(L);
+      ic = live ? "jring" : "jdot " + (L.status === "completed" ? "ok" : "bad");
+      lbl = L.desc;
+      sub = live ? (L.steps.at(-1)?.text || (L.status === "starting" ? "Starting…" : "Working…")) : "";
+      t = [live ? "" : AG_WORD[L.status] || L.status, L.tools ? `${L.tools} ${L.tools === 1 ? "step" : "steps"}` : "", agDur(Math.max(agMs(L), 1000))].filter(Boolean).join(" · ");
+    } else {
+      const j = x.job;
+      ic = j.status === "running" ? "jring" : "jdot " + (j.status === "completed" && !j.exit ? "ok" : j.status === "failed" ? "bad" : "");
+      lbl = j.description; t = j.status === "running" ? jobDur(j) : `${JOB_WORD[j.status] || j.status} · ${jobDur(j)}`;
+    }
+    it.querySelector(".ic").className = "ic " + ic;
+    it.querySelector(".lbl").textContent = lbl;
+    const sb = it.querySelector(".sub"); sb.textContent = sub; sb.hidden = !sub;
+    it.querySelector(".t").textContent = t;
+  });
+}
+function showAgent(S, L) {
+  if (!S || !L.el?.isConnected) return;
+  S.stick = false;
+  L.el.scrollIntoView({ block: "center", behavior: "smooth" });
+  L.el.classList.remove("flash"); void L.el.offsetWidth; L.el.classList.add("flash");
 }
 function showJob(S, j) {
   if (!S || !j.row) return;
@@ -629,6 +684,7 @@ function addAgent(S, ev, done) {
 }
 function paintAgent(L) {
   const n = L.el, live = L.status === "running" || L.status === "starting";
+  if (live) L.wasLive = true; else if (L.wasLive && !L.endedAt) L.endedAt = Date.now();
   n.className = "agent " + (live ? "run" : L.status === "completed" ? "ok" : L.status === "unfinished" ? "" : "bad") + (n.classList.contains("open") ? " open" : "");
   const ms = live && !L.msLive ? Date.now() - L.started : L.ms || (L.msLive ? L.msLive + (Date.now() - L.msAt) : 0);
   const bits = [AG_WORD[L.status] || L.status, ms ? agDur(live ? Math.max(ms, Date.now() - L.started) : ms) : "",
@@ -1538,7 +1594,7 @@ function onEvent(ev) {
     case "thinking_delta": if (S) { const t = S.think || thinkBlock(S, "", true, true); thinkType(S, t, ev.text); } break;
     case "tool": if (S) { thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false; addTool(S, ev, false); S.step = ev.label; S.word = ev.word || ""; S.inner.querySelector(":scope > .working")?.tick?.(); } break;
     case "tool_progress": if (S) { const t = S.tools.get(ev.id); if (t) { const st = t.querySelector(".steps"); st.appendChild(el("div", "", esc(ev.text))); while (st.children.length > 3) st.firstChild.remove(); } } break;
-    case "agent": case "agent_step": case "agent_done": if (S) agentEvent(S, ev); break;
+    case "agent": case "agent_step": case "agent_done": if (S) { agentEvent(S, ev); if (S.sid === state.active) syncJobsNote(); } break;
     case "job": case "job_done": if (S) jobEvent(S, ev); break;
     case "tool_result":
       if (S && S.agents?.has(ev.id)) {  // a foreground agent's reply; a background one only says it launched
