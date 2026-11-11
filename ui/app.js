@@ -170,6 +170,7 @@ function addUser(S, text, images, queued) {
     return m;
   }
   thinkDone(S); S.cur = null; S.think = null; S.replies = 0;
+  Extras.userSpoke(S);
   add(S, m);
   scrollDown(S, true);
   return m;
@@ -181,6 +182,7 @@ function delivered(S, text) {
   if (i < 0) return;
   const [p] = S.pending.splice(i, 1);
   if (!p.el.classList.contains("queued")) return;
+  Extras.userSpoke(S);
   thinkDone(S); endText(S); S.think = null; S.replies = 0;
   p.el.classList.remove("queued");
   p.el.querySelector(":scope > .q-label")?.remove();
@@ -192,6 +194,7 @@ function textBlock(S) {
   const d = el("div", "msg-text" + (S.replies ? " reply-next" : ""));  // a second reply in the same turn: divider in Chat/Thinking
   S.replies = (S.replies || 0) + 1;
   S.cur = { el: d, src: "", queued: false };
+  d._c = S.cur;  // its text, for the answer buttons
   add(S, d);
   return S.cur;
 }
@@ -933,7 +936,7 @@ async function renderView(S, body, refresh) {
       <button class="icb" data-vw="full" title="${document.body.classList.contains("view-full") ? "Back to chat (Esc)" : "Full window"}">${document.body.classList.contains("view-full")
         ? `<svg class="i" viewBox="0 0 24 24"><path d="M10 4v6H4M14 20v-6h6M10 10 4 4M14 14l6 6"/></svg>` : `<svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>`}</button>
       <button class="icb" data-vw="more" title="More"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg></button>
-    </div><div class="vw-frame"></div><div class="vw-f mono"></div>`;
+    </div><div class="vw-frame"></div><div class="vw-pick" hidden></div><div class="vw-f mono"></div>`;
   body.dataset.vwKey = key;
   body.querySelector(".vw-name .t").textContent = it.title || basename(it.path);
   body.querySelector(".vw-f").textContent = r.missing ? `${it.short || it.path} · not found` : (it.short || it.path);
@@ -950,7 +953,7 @@ async function renderView(S, body, refresh) {
     const [sx, sy] = viewShown.scroll;
     const html = await fillLibs(r.html);
     if (state.tab !== "view" || state.active !== S.sid || S.viewSel !== it.path) return;
-    f.srcdoc = html + HASH_JS + NOTE_JS + `<script>addEventListener("load",()=>scrollTo(${sx},${sy}));addEventListener("scroll",()=>parent.postMessage({tetherScroll:[scrollX,scrollY]},"*"),{passive:true});<\/script>`;
+    f.srcdoc = html + HASH_JS + NOTE_JS + Extras.PICK_JS + `<script>addEventListener("load",()=>scrollTo(${sx},${sy}));addEventListener("scroll",()=>parent.postMessage({tetherScroll:[scrollX,scrollY]},"*"),{passive:true});<\/script>`;
     f.addEventListener("load", () => f.classList.add("ready"), { once: true });  // fades in once drawn, never a white box first
     frame.appendChild(f); frame.classList.add("page");
   } else if (r.type === "image") {
@@ -1122,6 +1125,7 @@ window.addEventListener("message", e => {  // the sealed page reports where it's
   const f = document.querySelector("#panel-body .vw-frame iframe");
   if (!f || e.source !== f.contentWindow) return;
   if (Array.isArray(e.data?.tetherScroll)) viewShown.scroll = e.data.tetherScroll.map(Number);
+  if (e.data?.tetherPick) Extras.onPick(e.data.tetherPick, f);
   const S = state.open.get(state.active), it = S && (S.viewItems || []).find(x => x.path === S.viewSel);
   if (!S?.commenting || !it) return;
   if (e.data?.tetherNoteEsc) return closeNoteBox() || setCommenting(S, false);
@@ -1434,6 +1438,7 @@ function setToolOutput(t, out) {
 function addPermission(S, ev) {
   const card = el("div", "perm" + (ev.guarded ? " guarded" : ""));
   S.perms.set(ev.rid, card);
+  card.ev = ev; card.at = Date.now();  // for Waiting on you
   S.cur = null;
   if (ev.kind === "question") return dockPerm(S, add(S, questionCard(S, ev, card)));
   if (ev.kind === "plan") {
@@ -1516,6 +1521,7 @@ function permDone(S, rid, choice) {
   c.appendChild(el("div", "outcome", words[choice] || choice));
   S.perms.delete(rid);
   undockPerm(c);
+  Extras.sync();
 }
 
 // The working line's words when the animation shows the file or search itself: "Read app.js" reads as "Reading".
@@ -1562,6 +1568,7 @@ function renderItems(S, items) {
   }
   if (items.length) add(S, el("div", "note", "— earlier messages from the saved session —"));
   S.replaying = false;
+  Extras.fromHistory(S);
 }
 
 // ---------- events from Python ----------
@@ -1645,7 +1652,8 @@ function onEvent(ev) {
         const bits = [ev.ok ? "Done" : (ev.subtype || "Stopped")];
         if (ev.seconds) bits.push(`${ev.seconds}s`);
         add(S, el("div", "footnote", bits.join(" · ")));
-        if (S.sid !== state.active) S.unseen = true;
+        if (S.sid !== state.active && !Extras.split.has(S.sid)) S.unseen = true;
+        Extras.turnEnd(S, ev);
         if (S.sid === state.active) { refreshRepo(true); if (state.panel && state.tab === "stats") setTimeout(renderPanel, 1500); }
       }
       break;
@@ -1834,6 +1842,7 @@ function bucketOf(t) {
 }
 
 function renderSidebar() {
+  Extras.sync();
   const box = $("#side-list");
   const keep = box.scrollTop;
   box.innerHTML = "";
@@ -1978,6 +1987,7 @@ function sessionMenu(s, anchor, x, y) {
   const S = state.open.get(s.id);
   const items = [
     ["Open", () => openSession(s.id, s.cwd, s.title)],
+    state.active && s.id !== state.active ? ["Open beside this chat", () => Extras.split.beside(s)] : null,
     ["Rename…", () => { const row = document.querySelector(`#side-list .sess[data-sid="${s.id}"]`); if (row) rename(row, s); }],
     s.renamed ? ["Use Claude's title", () => setMeta(s.id, "title", "")] : null,
     [s.pinned ? "Unpin" : "Pin to top", () => setMeta(s.id, "pinned", !s.pinned)],
@@ -2172,12 +2182,14 @@ async function newFolderDialog() {
   setTimeout(() => name.focus(), 30);
 }
 
-function activate(sid) {
+function activate(sid, keep) {  // keep: a click inside the other half of a split; don't jump to the bottom or take the cursor
   const prev = state.open.get(state.active);
   if (prev) { prev.draft = $("#input").value; }
   state.active = sid;
   const S = state.open.get(sid);
   for (const x of state.open.values()) x.el.hidden = x !== S;
+  Extras.split.onActivate(sid, prev?.sid);
+  Extras.closeWaiting();
   $("#empty").hidden = !!S;
   $("#composer").hidden = !S;
   syncDock();
@@ -2196,8 +2208,9 @@ function activate(sid) {
   refreshRepo();
   document.body.classList.remove("view-full");
   syncViewTab(); loadView(S).then(() => { if (state.panel && state.tab === "view" && state.active === S.sid) renderPanel(); });
-  scrollDown(S, true); S.stick = true; syncJump();
-  $("#input").focus();
+  if (!keep) { scrollDown(S, true); S.stick = true; }
+  syncJump();
+  if (!keep) $("#input").focus();
 }
 
 // The session moved on elsewhere (VS Code, the terminal): offer to bring those messages in.
@@ -2237,6 +2250,7 @@ function closeSession(sid, force) {
   if (!force && (["running", "waiting", "starting"].includes(S.status) || jobsRunning(S).length)) { state.confirmClose = sid; renderSidebar(); return; }
   state.confirmClose = null;
   api().close_session(S.sid);
+  Extras.split.drop(sid);
   S.el.remove();
   dropDocked(sid);
   clearInterval(S.timer);
@@ -2821,6 +2835,7 @@ function setMini(on) {
   const b = document.body, now = b.classList.contains("mini");
   on = on ?? !now;
   if (on === now) return;
+  if (on) Extras.split.off();
   if (!b.style.getPropertyValue("--mini-ease") && CSS.supports("transition-timing-function", "linear(0, 1)")) b.style.setProperty("--mini-ease", springCurve());
   const S = state.open.get(state.active), bottom = S && (on || nearBottom(S));  // the mini window shows the latest messages
   b.classList.add("mini-go");
@@ -3451,7 +3466,9 @@ function paletteActions() {
     A("Full view", "", () => setView("full")), A("Thinking view", "", () => setView("thinking")), A("Chat view", "", () => setView("chat")),
     A("Changes and history", "", () => togglePanel(true, state.repo.status?.git ? "changes" : "notes"), !!S), A("Notes", "", () => togglePanel(true, "notes"), !!S), A("Stats", "⌘I", () => togglePanel(true, "stats"), !!S), A("Shelf", "⌘J", () => togglePanel(true, "view"), !!S),
     A("Continue in a new session", "", () => handoff(S.sid), !!S), A("Reload this session", "⌘R", () => reloadSession(S.sid), !!S), A("Close this session", "⌘W", closeActive, !!S),
-    A(state.showArchived ? "Hide archived sessions" : "Show archived sessions", "", () => $("#archived-btn").click())].filter(Boolean);
+    A(state.showArchived ? "Hide archived sessions" : "Show archived sessions", "", () => $("#archived-btn").click()),
+    A("Waiting on you", "", () => Extras.openWaiting()), A(Extras.split.isOn() ? "One chat" : "Two chats side by side", "", () => Extras.split.toggle(), state.open.size > 1),
+    A("Restart Tether when idle", "", () => Extras.restartDialog())].filter(Boolean);
 }
 function renderPalette() {
   const q = $("#pal-q").value.trim().toLowerCase(), hit = t => !q || t.toLowerCase().includes(q);
@@ -3539,7 +3556,8 @@ async function settingsDialog() {
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
     ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
-      + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed"))}
+      + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed")
+      + row("Restart", `<button class="btn ghost small" id="restart-open">Restart when idle</button>`, "Waits for every chat and job to finish, then reopens your chats"))}
     <section class="set-sec"><h3>Advanced</h3>
       ${row("Stream Claude's thinking", sw("show_thinking", s.show_thinking), "Applies to sessions started after you change it")}
       ${row("Speech model", `<select data-k="whisper_model">${opts([["tiny", "Tiny (fastest)"], ["base", "Base"], ["small", "Small"], ["medium", "Medium (most accurate)"]], s.whisper_model)}</select>`)}
@@ -3556,6 +3574,7 @@ async function settingsDialog() {
   box.querySelector("#report-btn").onclick = () => reportProblem(state.active || "");
   renderUpdRow();
   if (!upd.last) checkUpdate();
+  box.querySelector("#restart-open").onclick = () => { closeModal(); Extras.restartDialog(); };
   box.querySelector("#upd-check").onclick = async e => { e.target.disabled = true; $("#upd-line").textContent = "Checking…"; await checkUpdate(true); e.target.disabled = false; };
   box.querySelector("#fast-recheck")?.addEventListener("click", async e => {
     state.settings = await api().save_settings({ fast_unavailable: "" });
@@ -3786,6 +3805,7 @@ function wire() {
     }
     else if (e.key === "Escape") {
       if (closePeek() || closePalette()) return;
+      if ($("#modal").hidden && Extras.closeWaiting()) return;
       if ($("#view-menu") && !$("#view-menu").hidden) { $("#view-menu").hidden = true; return; }
       if (closeNoteBox()) return;
       if (S?.commenting && state.panel && state.tab === "view") return setCommenting(S, false);
@@ -3883,7 +3903,7 @@ async function runUpdate() {
 }
 async function reopenAfterUpdate() {
   const r = await api().take_reopen();
-  for (const c of r.chats || []) await openSession(c.sid, c.cwd, c.title).catch(() => {});
+  for (const c of r.chats || []) { await openSession(c.sid, c.cwd, c.title).catch(() => {}); const S = state.open.get(c.sid); if (S?.ask) S.ask.old = false; }
   if (r.active && state.open.has(r.active)) activate(r.active);
   if (r.chats?.length) renderSidebar();
 }
@@ -3893,6 +3913,7 @@ window.addEventListener("pywebviewready", async () => {
   state.settings = r.settings; state.hotkeys = r.hotkeys; state.home = r.home;
   renderToolFavs();
   wire();
+  Extras.init();
   applyTheme(r.settings.theme);
   applyText(r.settings.text_size, r.settings.bold_accent);
   applyWidth(r.settings.chat_width);

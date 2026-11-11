@@ -211,6 +211,7 @@ class Api:
             focused = False
         s = self._sessions.get(sid)
         if not focused and s:
+            text = re.sub(r"\s*<answers>.*?(</answers>|$)\s*$", "", text or "", flags=re.S)  # the answer-buttons line isn't for reading
             notifier.post(sid, s.title or APP_NAME, text)
 
     def _notice_clicked(self, sid: str) -> None:
@@ -2141,6 +2142,26 @@ class Api:
         threading.Timer(0.4, quit_).start()
         return {"ok": True}
 
+    def restart_now(self, chats=None, active="", force=False):
+        """Quit and start again, reopening these chats. Unless forced, only once nothing would be cut off."""
+        n = self.update_busy()
+        if n and not force:
+            return {"busy": n}
+        (SUPPORT / "reopen.json").write_text(json.dumps({"chats": chats or [], "active": active or ""}))
+        updater.relaunch(False)
+
+        def quit_():
+            try:
+                self._window.destroy()
+            finally:
+                threading.Timer(10, os._exit, (0,)).start()  # in case a window hangs on
+        threading.Timer(0.4, quit_).start()
+        return {"ok": True}
+
+    def code_changed(self):
+        """Whether Tether's own files differ from what this running copy loaded (edited on this Mac since it started)."""
+        return {"changed": bool(BOOT_CODE) and code_signature() != BOOT_CODE}
+
     def take_reopen(self):
         """The chats that were open before an update restarted Tether, once."""
         f = SUPPORT / "reopen.json"
@@ -2155,6 +2176,26 @@ class Api:
             s.close()
         for sid in list(self._side):
             self.side_close(sid)
+
+
+def code_signature() -> str:
+    """A fingerprint of the files Tether runs: its Python and its page. Backups and caches don't count."""
+    import hashlib
+    h = hashlib.sha1()
+    here = Path(__file__).resolve().parent
+    files = sorted([*here.glob("*.py"), *(here / "ui").glob("*.js"), *(here / "ui").glob("*.css"), *(here / "ui").glob("*.html"), here / "markup.html"])
+    for f in files:
+        try:
+            h.update(f.name.encode()); h.update(f.read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()
+
+
+try:
+    BOOT_CODE = code_signature()
+except Exception:  # noqa: BLE001
+    BOOT_CODE = ""
 
 
 def click_through() -> None:

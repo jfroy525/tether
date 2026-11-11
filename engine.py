@@ -39,7 +39,15 @@ normally do. Extra tools from the workbench MCP server:
 - recall: look something up in this session's full history (and the session it continues, if any): exact paths,
   IDs, commands, decisions and why, what failed before. Details dropped by compaction are still there. Use it
   before asking the user something they may already have told you, or before redoing work.
-- session_notes: the running notes for this session (decisions, facts, open items, gotchas, preferences)."""
+- session_notes: the running notes for this session (decisions, facts, open items, gotchas, preferences).
+Two things Tether does with what you write:
+- Answer buttons: when your reply ends by asking the user something they can answer in a few words (a yes or no, a
+  go-ahead, a pick between options), make the very last line <answers>Yes, push | No</answers>: two to four short
+  answers separated by |, the one you recommend first, each worded as the user would say it. For numbered options
+  start each with its number, like <answers>1 A switch in Tether | 2 Turn it off everywhere</answers>. Tether hides
+  that line and shows the answers as buttons. Leave it out when the question is open-ended or you ask nothing.
+- Pick buttons: in a Shelf page that shows options to choose between, put data-tether-option="1" (then "2", "3")
+  on each option's outer element. Tether adds a Pick button to each and sends the user's choice as their reply."""
 
 
 def artifact_info(inp: dict, cwd: str) -> dict:

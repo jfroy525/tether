@@ -98,8 +98,14 @@
   }
 
   // Fills `el` with the rendered markdown; tables become sortable table cards.
+  // "<answers>Yes | No</answers>" as a reply's last line is for Tether's answer buttons, not for reading.
+  // While a reply streams, a half-arrived tag at the very end is held back too.
+  window.stripAnswers = function (src, streaming) {
+    src = (src || "").replace(/\s*<answers>[\s\S]*?<\/answers>\s*$/, "");
+    return streaming ? src.replace(/\s*<answers>[\s\S]*$/, "").replace(/\s*<(a(n(s(w(e(r(s)?)?)?)?)?)?)?$/, "") : src;
+  };
   window.renderMarkdown = function (el, src, streaming) {
-    const { parts } = render(src || "", streaming);
+    const { parts } = render(window.stripAnswers(src, streaming), streaming);
     el.innerHTML = "";
     let buf = "";
     const flush = () => { if (buf) { el.insertAdjacentHTML("beforeend", buf); buf = ""; } };
