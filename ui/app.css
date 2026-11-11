@@ -1386,10 +1386,13 @@ body.pin-dragging .sess .acts { display: none !important; }
 .ho-f { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; font-size: var(--fs-meta); color: var(--text-2); }
 .ho-f select.field, .ho-f textarea.field, .ho-f input.field { width: 100% !important; max-width: none; box-sizing: border-box; }
 .ho-f textarea.field { min-height: 96px; resize: vertical; line-height: 1.45; padding-top: 8px; }
-/* run menu: other models a gateway serves, folded under one row */
-.run-menu .it.run-other-t { align-items: center; }
-.run-menu .it.run-other-t .chev { margin-left: auto; color: var(--text-3); transition: transform .2s; }
-.run-menu .it.run-other-t.open .chev { transform: rotate(90deg); }
-.run-menu .run-other { max-height: 300px; overflow-y: auto; margin: 0 0 4px; }
-.run-menu .run-other .og { font-size: 11px; font-weight: 600; color: var(--text-3); padding: 8px 10px 2px 34px; }
+/* run menu: models by company; Anthropic open at the top, the others fold to one row each */
+.run-menu .run-models { max-height: 430px; overflow-y: auto; margin: 0 -2px 4px 0; padding-right: 2px; }
+.run-menu .it.co { align-items: center; padding: 6px 10px; }
+.run-menu .it.co .chev { width: 14px; flex: none; color: var(--text-3); font-size: 13px; line-height: 20px; text-align: center; transition: transform .2s var(--spring); }
+.run-menu .it.co.open .chev { transform: rotate(90deg); }
+.run-menu .it.co .a { font-weight: 600; }
+.run-menu .it.co .n { margin-left: auto; color: var(--text-3); font-size: var(--fs-meta); }
+.run-menu .co-list { margin: 0 0 4px; }
+.run-menu .co + .co-list + .co, .run-menu .co-list:not([hidden]) + .co { margin-top: 2px; }
 .modal-p.om-err { color: var(--danger); margin-top: -6px; }

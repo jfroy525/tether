@@ -2371,23 +2371,33 @@ function renderRunMenu() {
   const m = $("#run-menu"), pick = (sel, v) => { const x = $(sel); if (x.value === v) return; x.value = v; x.dispatchEvent(new Event("change")); };
   const sub = t => (t || "").replace(/^[^·]*·\s*/, "");  // "Opus 5.5 · Best for everyday work" → "Best for everyday work"
   const opt = (sel, o, extra = "") => `<div class="it${o.value === $(sel).value ? " on" : ""}${extra}" data-sel="${sel}" data-v="${esc(o.value)}" title="${esc(o.title || "")}"><span class="ck">✓</span><span class="txt"><span class="a">${esc(sel === "#model-sel" ? modelFull(o) : o.textContent)}</span>${o.title ? `<span class="b">${esc(sub(o.title))}</span>` : ""}</span></div>`;
-  const mOpts = [...$("#model-sel").options], inGroup = o => o.parentElement.tagName === "OPTGROUP";
-  let others = "";
-  if (state.other?.on) {
-    const oth = mOpts.filter(inGroup), open = state.otherOpen ?? oth.some(o => o.value === $("#model-sel").value);
-    let last = "";
-    const rows = oth.map(o => { const g = o.parentElement.label, h = g !== last ? `<div class="og">${esc(g)}</div>` : ""; last = g; return h + opt("#model-sel", o); }).join("");
-    others = `<div class="it run-other-t${open ? " open" : ""}" data-other-toggle><span class="ck"></span><span class="txt"><span class="a">Other models</span><span class="b">${oth.length ? `Through ${esc(state.other.host || "your gateway")}` : state.other.busy ? "Checking which ones work…" : "None answered the last check"}</span></span><span class="chev">›</span></div>
-      <div class="run-other"${open ? "" : " hidden"}>${rows}<div class="it" data-other-add><span class="ck"></span><span class="txt"><span class="a">Other model…</span><span class="b">Type a model ID; Tether checks it first</span></span></div></div>`;
-  }
-  m.innerHTML = `<div class="run-cols"><div class="run-col"><div class="hd">Model</div>${mOpts.filter(o => !inGroup(o)).map(o => opt("#model-sel", o)).join("")}${others}</div>
+  // Models by company: Anthropic's at the top, open; each other company folds to one row. The company of the
+  // model in use starts open, so its check mark is always in view. With Claude models only, it's a plain list.
+  const mOpts = [...$("#model-sel").options], cur = $("#model-sel").value;
+  const companies = [["Anthropic", mOpts.filter(o => o.parentElement.tagName !== "OPTGROUP")]];
+  for (const g of $("#model-sel").querySelectorAll("optgroup")) companies.push([g.label, [...g.children]]);
+  const grouped = companies.length > 1 || state.other?.on;
+  state.coOpen ||= {};
+  const coOpen = (name, os) => state.coOpen[name] ?? (name === "Anthropic" || os.some(o => o.value === cur));
+  const models = !grouped ? mOpts.map(o => opt("#model-sel", o)).join("") : `<div class="run-models">${companies.map(([name, os]) => {
+    const open = coOpen(name, os), using = os.some(o => o.value === cur);
+    return `<div class="it co${open ? " open" : ""}" data-co="${esc(name)}"><span class="chev">›</span><span class="txt"><span class="a">${esc(name)}</span></span>`
+      + `<span class="n">${using && !open ? "in use · " : ""}${os.length}</span></div><div class="co-list"${open ? "" : " hidden"}>${os.map(o => opt("#model-sel", o)).join("")}</div>`;
+  }).join("")}${state.other?.on ? `<div class="it" data-other-add><span class="ck"></span><span class="txt"><span class="a">Other model…</span><span class="b">Type a model ID; Tether checks it first</span></span></div>` : ""}</div>`;
+  m.innerHTML = `<div class="run-cols"><div class="run-col"><div class="hd">Model</div>${models}</div>
     <div class="run-col"><div class="hd">Permissions<span class="kbd">⇧Tab</span></div>
     ${[...$("#mode-sel").options].map(o => opt("#mode-sel", o, o.value === "bypassPermissions" ? " risky" : "")).join("")}</div></div>
     <div class="sep"></div><div class="hd">Effort</div>
     <div class="seg run-eff">${[...$("#effort-sel").options].map(o => `<button data-sel="#effort-sel" data-v="${o.value}" class="${o.value === $("#effort-sel").value ? "on" : ""}">${EFFORT_SHORT[o.value]}</button>`).join("")}</div>
     ${state.open.get(state.active) ? `<div class="sep"></div><div class="hd">Context</div><div id="run-ctx" class="run-ctx"></div>` : ""}`;
-  const tg = m.querySelector("[data-other-toggle]");
-  if (tg) tg.onclick = e => { e.stopPropagation(); state.otherOpen = !tg.classList.contains("open"); renderRunMenu(); };
+  const inUse = m.querySelector(".run-models .it.on");
+  if (inUse) { const L = m.querySelector(".run-models"); L.scrollTop = Math.max(0, inUse.offsetTop - L.offsetTop - L.clientHeight + inUse.offsetHeight + 8); }  // the model in use is in view
+  m.querySelectorAll("[data-co]").forEach(n => n.onclick = e => {
+    e.stopPropagation();
+    const list = m.querySelector(".run-models"), top = list.scrollTop;
+    state.coOpen[n.dataset.co] = !n.classList.contains("open"); renderRunMenu();
+    m.querySelector(".run-models").scrollTop = top;  // opening a company doesn't jump the list
+  });
   const add = m.querySelector("[data-other-add]");
   if (add) add.onclick = e => { e.stopPropagation(); m.hidden = true; otherModelDialog(); };
   m.querySelectorAll("[data-sel]").forEach(n => n.onclick = e => {
@@ -2415,7 +2425,7 @@ function otherModelDialog() {
     go.disabled = false; go.textContent = "Check and use";
     if (r.error) { err.textContent = r.error; err.hidden = false; return; }
     closeModal();
-    state.other = await api().other_models(); state.otherOpen = true; await fillModels();
+    state.other = await api().other_models(); await fillModels();
     const sel = $("#model-sel");
     if (state.open.get(state.active) && sel.value !== r.value) { sel.value = r.value; sel.dispatchEvent(new Event("change")); syncRun(); }
     else toast(`${r.displayName} works; it's in the model menu under Other models.`);
@@ -2846,7 +2856,12 @@ async function fillModels() {
   const S = state.open.get(state.active);
   // a chat on a model that's no longer listed (refused, or the gateway dropped it) still shows its own name
   for (const v of new Set([S?.model, ...[...state.open.values()].map(x => x.model)]))
-    if (v && ![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("beforeend", option({ value: v, displayName: otherName(v) }));
+    if (v && ![...sel.options].some(o => o.value === v)) {
+      if (!v.includes("/")) { sel.insertAdjacentHTML("afterbegin", option({ value: v, displayName: v })); continue; }
+      let g = sel.querySelector('optgroup[label="Other"]');
+      if (!g) { sel.insertAdjacentHTML("beforeend", '<optgroup label="Other"></optgroup>'); g = sel.querySelector('optgroup[label="Other"]'); }
+      g.insertAdjacentHTML("beforeend", option({ value: v, displayName: otherName(v) }));
+    }
   if (S) { sel.value = S.model || ""; syncModes(S); } else syncRun();  // the Fast button follows the model list too
 }
 
@@ -3658,8 +3673,8 @@ async function settingsDialog() {
   const box = openModal(`<h2>Settings</h2>
     ${sec("Sessions", row("Keep notes for long sessions", sw("keep_notes", s.keep_notes !== false), "Haiku keeps running notes once a session gets long (about a cent per update). Recall and Continue in a new session use them")
       + row("Start fresh automatically", `<select data-k="auto_fresh">${opts([["0", "Never (compact instead)"], ["150000", "At 150k tokens"], ["200000", "At 200k tokens (recommended)"], ["300000", "At 300k tokens"]], String(s.auto_fresh ?? 200000))}</select>`, "When a conversation gets long, Tether continues it in a fresh session with its notes and recall into the old one. Cheaper than letting it grow; nothing for you to do")
-      + row("Model for new chats", `<select data-k="model">${opts([["", "Claude Code default"], ...(state.models || []).filter(m => m.value !== "default").map(m => [m.value, m.displayName || m.value]),
-        ...(state.other?.models || []).map(m => [m.value, `${m.displayName} (${m.group})`])], s.model)}</select>`,
+      + row("Model for new chats", `<select data-k="model">${opts([["", "Claude Code default"]], s.model)}${state.other?.models?.length ? `<optgroup label="Anthropic">` : ""}${opts((state.models || []).filter(m => m.value !== "default").map(m => [m.value, m.displayName || m.value]), s.model)}${state.other?.models?.length ? "</optgroup>" : ""}${
+        Object.entries((state.other?.models || []).reduce((g, m) => ((g[m.group] ||= []).push([m.value, m.displayName]), g), {})).map(([g, ps]) => `<optgroup label="${esc(g)}">${opts(ps, s.model)}</optgroup>`).join("")}</select>`,
       "The model picker by the message box changes only the chat you're in")
       + (state.other?.on ? row("Other models", `<span class="upd-row"><span id="om-line">${esc(omLine())}</span><button class="btn ghost small" id="om-check">Check now</button></span>`,
         `Non-Claude models ${state.other.host || "your gateway"} serves. Tether reads its list once a day (free) and sends one tiny request to each new model (a third of a cent at most); failures cost nothing. Check now rechecks all of them, about 10 cents`) : "")
