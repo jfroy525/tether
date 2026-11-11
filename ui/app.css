@@ -779,7 +779,8 @@ details.advanced[open] > summary::before { transform: rotate(90deg); }
 .ctx-rows span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctx-rows b { margin-left: auto; font: 400 var(--fs-meta) var(--mono); color: var(--text); }
 .ctx-act { display: flex; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.ctx-act input { flex: 1; height: 26px; font-size: var(--fs-meta); }
+.ctx-act input { flex: 1; min-width: 0; height: 28px; font-size: var(--fs-meta); }  /* min-width 0: a text box won't shrink below its own width otherwise */
+.ctx-act .btn { flex: none; }
 
 /* compactions */
 details.compaction > summary { list-style: none; cursor: pointer; }
@@ -791,7 +792,8 @@ details.compaction[open] > summary { text-align: center; margin-bottom: 8px; }
 .compaction-body { font-size: var(--fs-body); color: var(--text-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 0; max-height: 420px; overflow: auto; }
 #chats.view-chat .note.compaction { display: block; }
 #chats.view-chat .note.switch { display: block; }
-.ctx-last { margin-top: 10px; font-size: var(--fs-meta); }
+.ctx-last { margin-top: 10px; font-size: var(--fs-meta); display: flex; flex-wrap: wrap; gap: 4px 16px; }  /* each link stays whole; a narrow column puts the second under the first */
+.ctx-last .lnk { white-space: nowrap; }
 .compaction-modal { max-height: 60vh; overflow: auto; font-size: var(--fs-body); margin: 8px 0 4px; }
 
 /* sub-agents: a lane per agent; agents started together share a group line */

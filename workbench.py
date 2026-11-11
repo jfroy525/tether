@@ -324,11 +324,18 @@ class Api:
                         "pending": True})
         return out
 
-    def _drop_fresh(self, new: str, parent: str) -> None:
+    def _move_pin(self, old: str, new: str) -> None:
+        """A pinned chat changed sessions (fresh start, or one undone): the new id takes the old one's place in the
+        pin order. Pinning anew puts a chat at the top, so a fresh start used to jump it there."""
         m = self._meta()
-        if new in m["pinned"]:
-            self.set_meta(parent, "pinned", True)
-            self.set_meta(new, "pinned", False)
+        if old not in m["pinned"]:
+            return
+        m["pinned"] = [new if x == old else x for x in m["pinned"] if x != new]
+        SUPPORT.mkdir(parents=True, exist_ok=True)
+        self.META_FILE.write_text(json.dumps(m, indent=1))
+
+    def _drop_fresh(self, new: str, parent: str) -> None:
+        self._move_pin(new, parent)
         m = self._meta()
         m["titles"].pop(new, None); m["models"].pop(new, None); m["modes"].pop(new, None); m["repos"].pop(new, None)
         self.META_FILE.write_text(json.dumps(m, indent=1))
@@ -1020,8 +1027,7 @@ class Api:
             r.update(model=n.model, effort=n.effort, perm_mode=n.perm_mode)
         self.set_meta(new, "title", title)
         meta = self._meta()
-        if sid in meta["pinned"]:  # the new part takes the old one's place
-            self.set_meta(new, "pinned", True); self.set_meta(sid, "pinned", False)
+        self._move_pin(sid, new)  # the new part takes the old one's place
         text = (f"[Tether handoff] This session continues “{title}” ({sid[:8]}). Its notes, where it left off, and the "
                 f"recall tool (which searches that session's full history) replace the old context.\n\n"
                 f"# Notes\n{md or '(none yet)'}\n\n"

@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-11 · Pinned order and the context menu
+- A pinned chat keeps its place in Pinned after a fresh start, instead of jumping to the top.
+- The context section of the model menu fits at larger text sizes: the Compact now button stays in its column, and the two links don't break mid-line.
+
 ## 2026-11-11 · See what's in an update
 - Hover the update icon to see what the update has in it: the new change log entries, and a Claude Code update if there is one.
 

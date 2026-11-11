@@ -2501,7 +2501,7 @@ function renderCtx(S) {
       ${u.estimated ? `<div class="ctx-sub">As of the last reply${u.maxTokens ? "" : " · limit not known yet for this model"}. Getting the exact breakdown…</div>` : ""}
       ${n.usable && !u.estimated ? `<div class="ctx-stack">${used.map(c => `<span style="width:${c.tokens / n.usable * 100}%" title="${esc(c.name)} · ${kfmt(c.tokens)}"></span>`).join("")}</div>
       <div class="ctx-sub">${kfmt(n.used)} of ${kfmt(n.usable)} · ${n.fresh ? "then Tether starts fresh, carrying over notes and recall (Settings › Sessions)" : `auto-compacts after that${u.autocompactSource === "settings" ? ` (your ${kfmt(n.max)} limit in Claude settings)` : ""}`}</div>` : u.estimated ? "" : `<div class="ctx-sub">Getting the numbers…</div>`}
-      <div class="ctx-last"><a class="lnk" id="ctx-summary">Last compaction summary</a> · <a class="lnk" id="ctx-handoff">Start fresh now</a></div>
+      <div class="ctx-last"><a class="lnk" id="ctx-summary">Last compaction summary</a><a class="lnk" id="ctx-handoff">Start fresh now</a></div>
       <div class="ctx-act">
         <input id="ctx-focus" type="text" placeholder="What to keep (optional)">
         <button class="btn primary small" id="ctx-compact" ${busy ? "disabled title='Wait for Claude to finish'" : ""}>Compact now</button>
