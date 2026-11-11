@@ -2209,6 +2209,11 @@ class Api:
                 out.append({"sid": s.sid, "title": s.title or "New session", "why": why})
         return out
 
+    def change_log(self):
+        """Settings › Updates › Change log: every entry in this copy, plus what GitHub has that isn't installed yet."""
+        last = updater._last.get("res") or {}
+        return {"installed": updater.change_log(), "pending": last.get("notes") or [] if last.get("behind") else []}
+
     def update_now(self, chats=None, active=""):
         n = self.update_busy()
         if n:

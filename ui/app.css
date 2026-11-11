@@ -1396,3 +1396,14 @@ body.pin-dragging .sess .acts { display: none !important; }
 .run-menu .co-list { margin: 0 0 4px; }
 .run-menu .co + .co-list + .co, .run-menu .co-list:not([hidden]) + .co { margin-top: 2px; }
 .modal-p.om-err { color: var(--danger); margin-top: -6px; }
+/* change log: the update box and Settings › Updates › Change log */
+.cl-scroll { max-height: min(62vh, 560px); overflow-y: auto; margin: 0 -4px 14px 0; padding-right: 4px; }
+.upd-notes { max-height: 300px; overflow-y: auto; margin: 4px 0 14px; padding-right: 4px; }
+.cl-sec { font-size: 11px; font-weight: 600; color: var(--text-3); margin: 4px 0 6px; }
+.cl-list + .cl-sec { margin-top: 14px; }
+.cl-e { padding: 8px 0; border-top: 1px solid var(--line); }
+.cl-list .cl-e:first-child { border-top: 0; padding-top: 2px; }
+.cl-h { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-ctl); color: var(--text); }
+.cl-h .cl-d { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--text-3); }
+.cl-b { font-size: var(--fs-meta); color: var(--text-2); margin-top: 3px; }
+.cl-b ul { margin: 0; padding-left: 18px; } .cl-b li { margin: 1px 0; } .cl-b p { margin: 0; }

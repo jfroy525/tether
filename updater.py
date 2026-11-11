@@ -45,6 +45,38 @@ def current() -> str:
     return _git("log", "-1", "--format=%h · %cs")[1].strip() if (HERE / ".git").exists() else ""
 
 
+def parse_log(text: str) -> list[dict]:
+    """CHANGELOG.md -> [{date, title, body}], newest first. Each entry starts '## YYYY-MM-DD · Title'."""
+    out: list[dict] = []
+    for line in (text or "").splitlines():
+        if line.startswith("## "):
+            date, _, title = line[3:].partition(" · ")
+            out.append({"date": date.strip(), "title": title.strip() or date.strip(), "body": ""})
+        elif out:
+            out[-1]["body"] += line + "\n"
+    for e in out:
+        e["body"] = e["body"].strip()
+        e["key"] = f"{e['date']} · {e['title']}"
+    return out
+
+
+def change_log() -> list[dict]:
+    """This copy's change log."""
+    try:
+        return parse_log((HERE / "CHANGELOG.md").read_text())
+    except OSError:
+        return []
+
+
+def _pending_log() -> list[dict]:
+    """Entries in GitHub's change log that this copy doesn't have yet: what the update brings."""
+    code, text = _git("show", "origin/main:CHANGELOG.md")
+    if code:
+        return []
+    have = {e["key"] for e in change_log()}
+    return [e for e in parse_log(text) if e["key"] not in have]
+
+
 def status(force: bool = False) -> dict:
     """{behind, ahead, dirty, changes}: commits on GitHub's main not here yet, and whether this copy can take them."""
     if not (HERE / ".git").exists():
@@ -62,6 +94,7 @@ def status(force: bool = False) -> dict:
     dirty = bool(_git("status", "--porcelain", "--untracked-files=no")[1].strip())
     log = _git("log", "--format=%s", "HEAD..origin/main")[1].splitlines() if behind else []
     res = {"ok": True, "behind": behind, "ahead": ahead, "dirty": dirty, "changes": log[:12], "more": max(0, len(log) - 12),
+           "notes": _pending_log() if behind else [],
            "current": current(), "checked": time.time()}
     _last.update(at=time.time(), res=res)
     return res

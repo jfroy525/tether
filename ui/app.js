@@ -3703,6 +3703,7 @@ async function settingsDialog() {
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
     ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
+      + row("Change log", `<button class="btn ghost small" id="cl-open">Open</button>`, "What changed in each update, and what an update would bring")
       + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed")
       + row("Restart", `<button class="btn ghost small" id="restart-open">Restart when idle</button>`, "Waits for every chat and job to finish, then reopens your chats")
       + row("Update on its own when idle", sw("auto_update", !!s.auto_update), "When an update comes from GitHub or Tether's files change on this Mac, it waits until no chat is working, no message is half-typed and you haven't typed for a minute, then restarts and reopens your chats"))}
@@ -3723,6 +3724,7 @@ async function settingsDialog() {
   renderUpdRow();
   if (!upd.last) checkUpdate();
   box.querySelector("#restart-open").onclick = () => { closeModal(); Extras.restartDialog(); };
+  box.querySelector("#cl-open").onclick = () => { closeModal(); changeLogDialog(); };
   const omc = box.querySelector("#om-check");
   if (omc) omc.onclick = async () => { omc.disabled = true; state.other = { ...state.other, busy: true }; $("#om-line").textContent = omLine(); await api().other_models_check(); setTimeout(() => omc.disabled = false, 4000); };
   box.querySelector("#upd-check").onclick = async e => { e.target.disabled = true; $("#upd-line").textContent = "Checking…"; await checkUpdate(true); e.target.disabled = false; };
@@ -4012,8 +4014,9 @@ function updateDialog() {
   }
   const list = (i.changes || []).map(c => `<li>${esc(c)}</li>`).join("") + (i.more ? `<li>and ${i.more} more</li>` : "");
   const kept = i.dirty || i.ahead ? " Changes made to Tether's files on this Mac are set aside in git." : "";
-  const box = openModal(`<h2>Update Tether</h2>${list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.${kept}</p>${upd.cc?.newer ? ccLine() : ""}
+  const box = openModal(`<h2>Update Tether</h2>${i.notes?.length ? `<div class="cl-list upd-notes"></div>` : list ? `<ul class="upd-list">${list}</ul>` : ""}<p class="modal-p" id="upd-p">Tether restarts to finish. Open chats come back.${kept}</p>${upd.cc?.newer ? ccLine() : ""}
     <div class="modal-acts"><button class="btn ghost" data-k="no">${upd.waiting ? "Don't update" : "Cancel"}</button><button class="btn primary" data-k="yes" id="upd-go">Update and restart</button></div>`);
+  if (i.notes?.length) fillLog(box.querySelector(".upd-notes"), i.notes);
   api().update_busy().then(n => {
     if (!n) return;
     $("#upd-p").textContent = `${n === 1 ? "A chat is" : n + " chats are"} still working. Tether updates when ${n === 1 ? "it finishes" : "they finish"}, then restarts. Open chats come back.${kept}`;
@@ -4022,6 +4025,24 @@ function updateDialog() {
   wireCc(box);
   box.querySelector('[data-k="no"]').onclick = () => { if (upd.waiting) stopWaiting(); closeModal(); };
   box.querySelector('[data-k="yes"]').onclick = () => { closeModal(); runUpdate(); };
+}
+// The change log (CHANGELOG.md): one entry per update, a date and title, then a line per change
+const logDay = d => { const t = new Date(d + "T12:00:00"); return isNaN(t) ? d : t.toLocaleDateString(undefined, { month: "short", day: "numeric", year: t.getFullYear() === new Date().getFullYear() ? undefined : "numeric" }); };
+function fillLog(box, entries) {
+  for (const e of entries) {
+    const d = el("div", "cl-e", `<div class="cl-h"><b></b><span class="cl-d"></span></div><div class="msg-text cl-b"></div>`);
+    d.querySelector("b").textContent = e.title; d.querySelector(".cl-d").textContent = logDay(e.date);
+    window.renderMarkdown(d.querySelector(".cl-b"), e.body || "");
+    box.appendChild(d);
+  }
+}
+async function changeLogDialog() {
+  const r = await api().change_log().catch(() => ({ installed: [], pending: [] }));
+  const box = openModal(`<h2>Change log</h2><div class="cl-scroll">${r.pending?.length ? `<div class="cl-sec">Not installed yet</div><div class="cl-list" data-k="pending"></div><div class="cl-sec">Installed</div>` : ""}<div class="cl-list" data-k="installed"></div></div>
+    <div class="modal-acts">${r.pending?.length ? `<button class="btn ghost" data-close>Close</button><button class="btn primary" data-k="upd">Update…</button>` : `<button class="btn primary" data-close>Close</button>`}</div>`);
+  if (r.pending?.length) { fillLog(box.querySelector('[data-k="pending"]'), r.pending); box.querySelector('[data-k="upd"]').onclick = () => { closeModal(); updateDialog(); }; }
+  if (r.installed?.length) fillLog(box.querySelector('[data-k="installed"]'), r.installed);
+  else box.querySelector('[data-k="installed"]').appendChild(el("p", "modal-p", "This copy has no change log yet."));
 }
 function renderUpdRow() {  // Settings › Updates: this copy's version and the last check, or why it can't check
   const line = $("#upd-line"); if (!line) return;
