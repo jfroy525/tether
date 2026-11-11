@@ -40,6 +40,8 @@ normally do. Extra tools from the workbench MCP server:
   IDs, commands, decisions and why, what failed before. Details dropped by compaction are still there. Use it
   before asking the user something they may already have told you, or before redoing work.
 - session_notes: the running notes for this session (decisions, facts, open items, gotchas, preferences).
+- hand_off: when the user asks you to hand something to another chat, write that chat a self-contained message
+  (the ask, then the context it needs) and send it with hand_off; the user sends it from there with one click.
 Two things Tether does with what you write:
 - Answer buttons: when your reply ends by asking the user something they can answer in a few words (a yes or no, a
   go-ahead, a pick between options), make the very last line <answers>Yes, push | No</answers>: two to four short
@@ -244,6 +246,7 @@ class Session:
         self.api_model = ""
         self._tasks: dict[str, str] = {}  # sub-agent task id -> the Agent tool call's id
         self._bg_agents: set[str] = set()  # background sub-agents still running (they die with the process too)
+        self._agent_started: dict[str, float] = {}  # when each background sub-agent started
         # background jobs (shell commands, monitors): task id -> what the page shows. They live inside this
         # Claude process, so closing or restarting it stops them; callers check running_jobs() first.
         self.jobs: dict[str, dict] = {}
@@ -320,6 +323,19 @@ class Session:
 
     def running_jobs(self) -> list[dict]:
         return [j for j in self.jobs.values() if j["status"] == "running"]
+
+    def busy_why(self) -> str:
+        """Why a restart would cut this chat off, in a few words; "" when it wouldn't."""
+        if self.status in ("running", "starting"):
+            return "replying"
+        if self.status == "waiting":
+            return "needs your answer"
+        j, a = len(self.running_jobs()), len(self._bg_agents)
+        if j:
+            return f"{j} job{'s' if j > 1 else ''} running"
+        if a:
+            return f"{a} agent{'s' if a > 1 else ''} running"
+        return ""
 
     def busy_work(self) -> bool:
         """Background commands or background sub-agents still running: closing the process would stop them."""
@@ -453,6 +469,7 @@ class Session:
             self._tasks[tid] = e.get("tool_use_id")
             if e.get("is_backgrounded"):
                 self._bg_agents.add(tid)
+                self._agent_started[tid] = time.time()
             self.emit({"type": "agent", "sid": self.sid, "id": e.get("tool_use_id"), "agent_id": tid,
                        "agent_type": e.get("subagent_type") or "", "description": e.get("description") or "",
                        "prompt": str(e.get("prompt") or "")[:6000], "background": bool(e.get("is_backgrounded"))})
@@ -460,6 +477,8 @@ class Session:
         use = e.get("tool_use_id") or self._tasks.get(tid)
         if tid not in self._tasks or not use:
             return
+        if sub == "task_updated" and (e.get("patch") or {}).get("status") == "completed":
+            self._bg_agents.discard(tid)  # finished; its report comes in the task_notification, if one follows
         if sub == "task_progress":
             u = e.get("usage") or {}
             self.emit({"type": "agent_step", "sid": self.sid, "id": use, "text": e.get("description") or "",
@@ -474,9 +493,11 @@ class Session:
     def _bg_list(self, tasks: list) -> None:
         """Claude Code's list of running background tasks, sent whenever it changes. A second signal beside the
         task_* events: a command in it that we haven't seen starts a job, and a job that drops out of it has ended."""
-        now = set()
+        now, live_agents = set(), set()
         for t in tasks:
             tid = t.get("task_id")
+            if tid and (t.get("task_type") == "local_agent" or t.get("subagent_type")):
+                live_agents.add(tid)
             if not tid or t.get("task_type") in (None, "local_agent") or t.get("subagent_type"):
                 continue
             now.add(tid)
@@ -485,6 +506,15 @@ class Session:
         for j in self.running_jobs():
             if j["task_id"] not in now and time.time() - j["started"] > 2:  # not one that started a moment ago
                 self._job_end(j["task_id"], "completed", "", None, guess=True)  # the end notice, if it comes, corrects this
+        # The list holds every live background task, sub-agents included: a background agent that left it has ended,
+        # even if its end notice never came. Without this one missed notice keeps the chat "busy" for good.
+        for tid in list(self._bg_agents):
+            if tid not in live_agents and time.time() - self._agent_started.get(tid, 0) > 2:
+                self._bg_agents.discard(tid)
+                print(f"[agents] {self.sid[:8]} end {tid} via task list", file=sys.stderr, flush=True)
+                use = self._tasks.get(tid)
+                if use:  # the lane stops showing it as running; a late notice still fills in the report
+                    self.emit({"type": "agent_done", "sid": self.sid, "id": use, "status": "completed", "summary": ""})
 
     def _job_start(self, e: dict, via: str = "task_started") -> None:
         tid = e.get("task_id")
@@ -744,6 +774,8 @@ class Session:
                                    **make_diff(before, _read(path))})
                 if name in QUIET_TOOLS or name == "mcp__workbench__show_table":
                     continue
+                if name == "mcp__workbench__hand_off" and ok:
+                    self.emit({"type": "handoff_new", "sid": sid})
                 if name == "mcp__workbench__show_artifact":
                     self.emit({"type": "artifact_checked", "sid": sid, "id": tid, "ok": ok, "text": result_text(b)[:600]})
                     continue

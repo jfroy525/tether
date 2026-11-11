@@ -72,6 +72,7 @@ DEFAULTS = {
     "transparency": 55,       # 0–100: how much of the desktop shows through the window; 0 = solid, no blur
     "frost": 50,              # 0–100: how strongly the desktop behind is blurred, apart from transparency; 50 = macOS's own
     "glass_adapt": True,
+    "auto_update": False,     # update or restart on its own once nothing is working (Settings › Updates)
     "dock_pulse": True,       # the Dock icon glows softly while any chat is working      # each pane switches light/dark text, or adds tint, by what's behind it, so text stays readable
     "voice_key": "ctrl+alt+space",
     "circle_key": "ctrl+alt+c",
@@ -354,7 +355,50 @@ class Api:
         listed = {s["id"] for s in items}
         continued = {p for c, p in pm.items() if c in listed}
         items = [s for s in items if s["id"] not in continued]  # one row per conversation: its newest part
+        self._publish_chats(items, m)
         return {"sessions": items, "pinned": m["pinned"]}
+
+    # ---------- handoffs between chats
+    # Claude's hand_off tool (wb_mcp.py) finds the chat in chats.json and leaves a file in handoffs/; the page shows it
+    # in that chat as a message to send, and the file goes once it's sent, moved to the message box or dismissed.
+    HANDOFF_DIR = SUPPORT / "handoffs"
+
+    def _publish_chats(self, items=None, meta=None):
+        """chats.json: open chats first, then pinned, then the 60 most recent, for hand_off to match names against."""
+        try:
+            m = meta or self._meta()
+            items = items if items is not None else getattr(self, "_last_items", [])
+            self._last_items = items
+            home = str(Path.home())
+            def row(sid, title, cwd, opened):
+                return {"sid": sid, "title": (m["titles"].get(sid) or title or "New session")[:120], "cwd": cwd, "open": opened,
+                        "pinned": sid in m["pinned"], "group": "Home" if cwd.rstrip("/") == home else Path(cwd).name}
+            out = [row(sid, s.title, s.cwd, True) for sid, s in list(self._sessions.items())]
+            seen = {c["sid"] for c in out}
+            rest = sorted((s for s in items if s["id"] not in seen and not s.get("archived")),
+                          key=lambda s: (s["id"] not in m["pinned"], -(s.get("mtime") or 0)))[:60]
+            out += [row(s["id"], s.get("title"), s.get("cwd") or home, False) for s in rest]
+            SUPPORT.mkdir(parents=True, exist_ok=True)
+            tmp = SUPPORT / "chats.json.tmp"
+            tmp.write_text(json.dumps(out))
+            tmp.replace(SUPPORT / "chats.json")
+        except Exception as exc:  # noqa: BLE001 - never break the sidebar over this
+            print(f"[handoff] couldn't list chats: {exc}", file=sys.stderr, flush=True)
+
+    def handoffs(self):
+        """Handoffs not yet sent, oldest first."""
+        out = []
+        for f in sorted(self.HANDOFF_DIR.glob("*.json")) if self.HANDOFF_DIR.is_dir() else []:
+            try:
+                out.append(json.loads(f.read_text()))
+            except (OSError, ValueError):
+                pass
+        return sorted(out, key=lambda h: h.get("at") or 0)
+
+    def handoff_done(self, hid):
+        if hid and all(c.isalnum() for c in str(hid)):
+            (self.HANDOFF_DIR / f"{hid}.json").unlink(missing_ok=True)
+        return {"ok": True}
 
     def part_items(self, sid):
         """An earlier part of a conversation, for scrolling back past a fresh start."""
@@ -374,6 +418,7 @@ class Api:
         return self._sessions.get(sid)
 
     def open_session(self, sid, cwd, title=""):
+        threading.Timer(1.0, self._publish_chats).start()  # once it's open, hand_off prefers it
         s = self._sessions.get(sid)
         title = self._meta()["titles"].get(sid) or title
         pending = not s and (recall.INDEX_DIR / "carry" / f"{sid}.md").exists() and not history.find_file(sid)
@@ -2128,10 +2173,19 @@ class Api:
         return sum(1 for s in list(self._sessions.values())
                    if s.status in ("running", "waiting", "starting") or s.busy_work())
 
+    def busy_chats(self):
+        """The chats a restart waits for and why: [{sid, title, why}]."""
+        out = []
+        for s in list(self._sessions.values()):
+            why = s.busy_why()
+            if why:
+                out.append({"sid": s.sid, "title": s.title or "New session", "why": why})
+        return out
+
     def update_now(self, chats=None, active=""):
         n = self.update_busy()
         if n:
-            return {"busy": n}
+            return {"busy": n, "chats": self.busy_chats()}
         r = updater.apply()
         if r.get("error"):
             return r
@@ -2146,11 +2200,16 @@ class Api:
         threading.Timer(0.4, quit_).start()
         return {"ok": True}
 
-    def restart_now(self, chats=None, active="", force=False):
-        """Quit and start again, reopening these chats. Unless forced, only once nothing would be cut off."""
+    def restart_now(self, chats=None, active="", force=False, auto=False):
+        """Quit and start again, reopening these chats. Unless forced, only once nothing would be cut off.
+        auto: started by Settings › Updates › Update on its own; refused if Tether's Python wouldn't start."""
         n = self.update_busy()
         if n and not force:
-            return {"busy": n}
+            return {"busy": n, "chats": self.busy_chats()}
+        if auto:
+            bad = code_mistake()
+            if bad:
+                return {"error": f"Tether didn't restart on its own: {bad}. Fix it, then restart."}
         (SUPPORT / "reopen.json").write_text(json.dumps({"chats": chats or [], "active": active or ""}))
         updater.relaunch(False)
 
@@ -2180,6 +2239,19 @@ class Api:
             s.close()
         for sid in list(self._side):
             self.side_close(sid)
+
+
+def code_mistake() -> str:
+    """The first Python file of Tether's that wouldn't load ("server.py line 12"), or "" when they all compile."""
+    here = Path(__file__).resolve().parent
+    for f in sorted(here.glob("*.py")):
+        try:
+            compile(f.read_text(), f.name, "exec")
+        except SyntaxError as e:
+            return f"{f.name} line {e.lineno} has a mistake"
+        except (OSError, ValueError):
+            pass
+    return ""
 
 
 def code_signature() -> str:

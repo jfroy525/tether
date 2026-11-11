@@ -1603,6 +1603,7 @@ function onEvent(ev) {
     case "tool_progress": if (S) { const t = S.tools.get(ev.id); if (t) { const st = t.querySelector(".steps"); st.appendChild(el("div", "", esc(ev.text))); while (st.children.length > 3) st.firstChild.remove(); } } break;
     case "agent": case "agent_step": case "agent_done": if (S) { agentEvent(S, ev); if (S.sid === state.active) syncJobsNote(); } break;
     case "job": case "job_done": if (S) jobEvent(S, ev); break;
+    case "handoff_new": Extras.loadHandoffs(); break;
     case "tool_result":
       if (S && S.agents?.has(ev.id)) {  // a foreground agent's reply; a background one only says it launched
         const L = S.agents.get(ev.id);
@@ -1853,6 +1854,7 @@ function sessRow(s, kind) {
   else if (S) meta = `<span class="st ${status}">${STATUS_WORDS[status] || ""}</span><span>${esc(where)}</span>`;
   const nj = S ? jobsRunning(S).length : 0;
   if (nj) meta = `<span class="st job"><i class="jring"></i>${nj} ${nj === 1 ? "job" : "jobs"} running</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
+  else if (S?.handoffs?.size && sid !== state.active) meta = `<span class="st sq">Handoff waiting</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
   else if (S?.sq?.ready && sid !== state.active) meta = `<span class="st sq">Side answer ready</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
   else if (S?.jobFailed) meta = `<span class="st exited">Job failed</span>` + meta.replace(/<span class="st (idle|done)">[^<]*<\/span>/, "");
   else meta = (ui.view === "repo" && kind === "recent" ? "" : `<span>${esc(where)}</span>`) + (s.branch && s.branch !== "HEAD" ? `<span>${esc(s.branch)}</span>` : "") + `<span>${ago(s.mtime)}</span>`;
@@ -2052,6 +2054,7 @@ function sessionMenu(s, anchor, x, y) {
   const items = [
     ["Open", () => openSession(s.id, s.cwd, s.title)],
     state.active && s.id !== state.active ? ["Open beside this chat", () => Extras.split.beside(s)] : null,
+    ["Hand off to another chat…", () => Extras.handoffDialog(s)],
     ["Rename…", () => { const row = document.querySelector(`#side-list .sess[data-sid="${s.id}"]`); if (row) rename(row, s); }],
     s.renamed ? ["Use Claude's title", () => setMeta(s.id, "title", "")] : null,
     [s.pinned ? "Unpin" : "Pin to top", () => setMeta(s.id, "pinned", !s.pinned)],
@@ -3403,6 +3406,7 @@ function freshStart(ev) {
   }
   (state.moved ||= {})[ev.old] = N.sid;
   add(N, freshCard(N, { ...ev, from: ev.old?.slice(0, 8) }));
+  Extras.carryAsk(old, N);  // after the card, so the buttons stay last
   if (state.active === ev.old || !state.active) activate(N.sid);
   renderSidebar(); loadHistory();
 }
@@ -3532,7 +3536,7 @@ function paletteActions() {
     A("Changes and history", "", () => togglePanel(true, state.repo.status?.git ? "changes" : "notes"), !!S), A("Notes", "", () => togglePanel(true, "notes"), !!S), A("Stats", "⌘I", () => togglePanel(true, "stats"), !!S), A("Shelf", "⌘J", () => togglePanel(true, "view"), !!S),
     A("Continue in a new session", "", () => handoff(S.sid), !!S), A("Reload this session", "⌘R", () => reloadSession(S.sid), !!S), A("Close this session", "⌘W", closeActive, !!S),
     A(state.showArchived ? "Hide archived sessions" : "Show archived sessions", "", () => $("#archived-btn").click()),
-    A("Waiting on you", "", () => Extras.openWaiting()), A(Extras.split.isOn() ? "One chat" : "Two chats side by side", "", () => Extras.split.toggle(), state.open.size > 1),
+    A("Waiting on you", "", () => Extras.openWaiting()), A("Hand off to another chat…", "", () => Extras.handoffDialog(info(S.sid) || { id: S.sid, cwd: S.cwd, title: S.title }), !!S), A(Extras.split.isOn() ? "One chat" : "Two chats side by side", "", () => Extras.split.toggle(), state.open.size > 1),
     A("Restart Tether when idle", "", () => Extras.restartDialog())].filter(Boolean);
 }
 function renderPalette() {
@@ -3622,7 +3626,8 @@ async function settingsDialog() {
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
     ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
       + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed")
-      + row("Restart", `<button class="btn ghost small" id="restart-open">Restart when idle</button>`, "Waits for every chat and job to finish, then reopens your chats"))}
+      + row("Restart", `<button class="btn ghost small" id="restart-open">Restart when idle</button>`, "Waits for every chat and job to finish, then reopens your chats")
+      + row("Update on its own when idle", sw("auto_update", !!s.auto_update), "When an update comes from GitHub or Tether's files change on this Mac, it waits until no chat is working, no message is half-typed and you haven't typed for a minute, then restarts and reopens your chats"))}
     <section class="set-sec"><h3>Advanced</h3>
       ${row("Stream Claude's thinking", sw("show_thinking", s.show_thinking), "Applies to sessions started after you change it")}
       ${row("Speech model", `<select data-k="whisper_model">${opts([["tiny", "Tiny (fastest)"], ["base", "Base"], ["small", "Small"], ["medium", "Medium (most accurate)"]], s.whisper_model)}</select>`)}
@@ -3899,6 +3904,7 @@ async function checkUpdate(force = false) {
   b.hidden = !(upd.info?.behind > 0 || upd.cc?.newer);
   b.classList.toggle("wait", upd.waiting);
   b.title = b.ariaLabel = upd.waiting ? "Updating when chats finish" : "Update available";
+  Extras.autoCheck("update");
 }
 function ccLine() {  // "Claude Code 2.1.312 → 2.1.318" with its own Update button
   const c = upd.cc || {};

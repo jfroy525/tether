@@ -15,7 +15,13 @@ const Extras = (() => {
   let ready = false;
 
   // Send `text` to a chat as if you had typed it there, whether or not it's the chat in front.
+  // A fresh start moves a chat to a new session; buttons drawn before it still hold the old one, so follow the move.
+  function current(S) {
+    for (let i = 0; S && i < 20 && state.moved?.[S.sid] && state.open.has(state.moved[S.sid]); i++) S = state.open.get(state.moved[S.sid]);
+    return S;
+  }
   async function quickSend(S, text) {
+    S = current(S);
     if (!S || !text) return;
     S.unseen = false;  // you answered it, so you've seen it
     if (going(S)) { holdMessage(S, text, []); renderSidebar(); return; }
@@ -58,7 +64,7 @@ const Extras = (() => {
     const row = el("div", "answers");
     S.ask.answers.forEach((a, i) => { const b = answerButton(a, i === 0); b.onclick = () => quickSend(S, a); row.appendChild(b); });
     const o = el("button", "btn ans ghost", IC.pen + "<span>Other answer</span>");
-    o.onclick = () => { if (S.sid !== state.active) activate(S.sid); $("#input").focus(); };
+    o.onclick = () => { const C = current(S); if (C && C.sid !== state.active) activate(C.sid); $("#input").focus(); };
     row.appendChild(o);
     add(S, row);
   }
@@ -74,6 +80,10 @@ const Extras = (() => {
     sync();
   }
   function userSpoke(S) { if (!S.ask && !S.inner.querySelector(":scope > .answers")) return; S.ask = null; clearAnswers(S); if (!S.replaying) sync(); }
+  function carryAsk(old, N) {  // a fresh start: the question still stands in the new session, buttons redrawn for it
+    if (!old?.ask) return;
+    N.ask = old.ask; drawAnswers(N);
+  }
   function fromHistory(S) {  // a saved chat whose last word was a question: its buttons come back
     const kids = [...S.inner.children].filter(n => !n.matches(".note, .footnote, .working, .answers"));
     const last = kids.pop();
@@ -85,9 +95,11 @@ const Extras = (() => {
   // ---------- Waiting on you ----------
   // Every open chat that needs you: an approval, a question at the end of a reply, a reply you haven't seen, a failed job.
   let waitOpen = false, waitKey = "", sent = [];
-  function waitingItems() {
-    const out = [];
+  function waitingItems() {  // the chats on screen (the one in front, or both sides of a split) are left out: you can see them
+    const out = [], here = new Set(sp.on ? sp.sides : [state.active]);
     for (const S of state.open.values()) {
+      if (here.has(S.sid)) continue;
+      for (const h of S.handoffs?.values() || []) out.push({ S, id: "h" + h.id, kind: "Handoff", at: (h.at || 0) * 1000, handoff: h });
       for (const [rid, card] of S.perms) {
         if (!card.ev) continue;
         out.push({ S, id: "p" + rid, kind: card.ev.kind === "question" ? "Question" : card.ev.kind === "plan" ? "Plan" : "Permission", at: card.at, rid, ev: card.ev });
@@ -129,6 +141,11 @@ const Extras = (() => {
           act(answerButton("Deny", false, true), () => { answer(S, x.rid, "deny"); note(S, "Deny"); });
           openIt(false);
         }
+      } else if (x.handoff) {
+        const h = x.handoff;
+        q.textContent = `From ${h.from_title}: ${h.text.replace(/\s+/g, " ").slice(0, 240)}${h.text.length > 240 ? "…" : ""}`;
+        act(answerButton("Send", true, true), () => { note(S, "Sent the handoff"); sendHandoff(S, h); });
+        openIt(false);
       } else if (x.ask) {
         q.textContent = x.ask.q;
         x.ask.answers.forEach((a, i) => act(answerButton(a, i === 0, true), () => { note(S, a); quickSend(S, a); }));
@@ -370,20 +387,151 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     bar.hidden = false;
   }
 
+  // ---------- handoffs between chats ----------
+  // Claude in one chat calls hand_off (wb_mcp.py), which leaves a file for the chat it names. Here it becomes a card
+  // in that chat: what it says, with Send, Edit (into the message box) and Dismiss. Nothing is sent until you click.
+  // Unsent ones come back after a restart. You can also start one from a chat's menu or ⌘K.
+  let hoBusy = false;
+  const handoffMessage = h => `Handoff from the chat “${h.from_title}”:\n\n${h.text}`;
+  async function loadHandoffs() {
+    if (hoBusy || !ready) return;
+    hoBusy = true;
+    try {
+      for (const h of await api().handoffs().catch(() => []) || []) {
+        let S = state.open.get(h.to_sid);
+        if (S?.handoffs?.has(h.id)) continue;
+        if (!S) { await openSession(h.to_sid, h.to_cwd, h.to_title, true).catch(() => {}); S = state.open.get(h.to_sid); }
+        if (!S) continue;
+        (S.handoffs ||= new Map()).set(h.id, h);
+        h.el = handoffCard(S, h);
+        add(S, h.el);
+      }
+    } finally { hoBusy = false; }
+    renderSidebar();
+  }
+  function handoffCard(S, h) {
+    const d = el("div", "handoff", `<div class="ho-hd"><span class="wt-dot run"></span><span class="k">Handoff</span><span>from <b></b></span><span class="ago"></span></div><div class="ho-body"></div><div class="ho-acts"></div>`);
+    d.querySelector("b").textContent = h.from_title;
+    d.querySelector(".ago").textContent = ago(h.at || Date.now() / 1000);
+    window.renderMarkdown(d.querySelector(".ho-body"), h.text);
+    const acts = d.querySelector(".ho-acts"), btn = (label, primary, fn, icon = "") => {
+      const b = icon ? el("button", "btn ans small" + (primary ? " primary" : " ghost"), icon + `<span>${label}</span>`) : answerButton(label, primary, true);
+      if (!primary && !icon) b.classList.add("ghost");
+      b.onclick = fn; acts.appendChild(b);
+    };
+    btn("Send", true, () => sendHandoff(S, h));
+    btn("Edit", false, () => editHandoff(S, h), IC.pen);
+    btn("Dismiss", false, () => doneHandoff(S, h, "Dismissed"), IC.no);
+    return d;
+  }
+  function doneHandoff(S, h, how) {
+    S.handoffs?.delete(h.id);
+    api().handoff_done(h.id);
+    if (h.el) { h.el.classList.add("done"); h.el.querySelector(".ho-acts").innerHTML = `<span class="ho-st">${esc(how)}</span>`; }
+    renderSidebar();
+  }
+  function sendHandoff(S, h) { doneHandoff(S, h, "Sent"); quickSend(S, handoffMessage(h)); }
+  function editHandoff(S, h) {
+    if (state.active !== S.sid) activate(S.sid);
+    const box = $("#input"), cur = box.value.trim();
+    box.value = (cur ? cur + "\n\n" : "") + handoffMessage(h);
+    autogrow(); box.focus(); box.setSelectionRange(box.value.length, box.value.length);
+    doneHandoff(S, h, "Moved to the message box");
+  }
+  function handoffDialog(s) {  // s: the chat that hands off (a sidebar row's session, or the chat in front)
+    if (!s?.id) return;
+    const byId = new Map((state.sessions || []).map(x => [x.id, x]));
+    const name = id => state.open.get(id)?.title || byId.get(id)?.title || "New session";
+    const seen = new Set([s.id]), opts = [];
+    const push = (id, group) => { if (!seen.has(id)) { seen.add(id); opts.push({ id, group, title: name(id) }); } };
+    for (const S of state.open.values()) if (S.status !== "new") push(S.sid, "Open");
+    for (const x of state.sessions || []) if (x.pinned && !x.archived) push(x.id, "Pinned");
+    for (const x of (state.sessions || []).filter(x => !x.archived && !x.scratch).sort((a, b) => b.mtime - a.mtime).slice(0, 20)) push(x.id, "Recent");
+    if (!opts.length) return toast("Open another chat first.");
+    const groups = ["Open", "Pinned", "Recent"].map(g => { const o = opts.filter(x => x.group === g); return o.length ? `<optgroup label="${g}">${o.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</optgroup>` : ""; }).join("");
+    const box = openModal(`<h2>Hand off to another chat</h2>
+      <label class="ho-f"><span>To</span><select class="field" data-k="to">${groups}</select></label>
+      <label class="ho-f"><span>What should it do?</span><textarea class="field" data-k="ask" rows="4" placeholder="Check the change log job and tell me if it ran"></textarea></label>
+      <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button><button class="btn primary ans" data-k="go">${IC.send || ""}<span>Hand off</span></button></div>`);
+    const ta = box.querySelector("[data-k=ask]");
+    setTimeout(() => ta.focus(), 50);
+    const go = async () => {
+      const to = box.querySelector("[data-k=to]").value, ask = ta.value.trim();
+      if (!ask) { ta.focus(); return; }
+      closeModal();
+      let S = state.open.get(s.id);
+      if (!S) { await openSession(s.id, s.cwd, s.title, true).catch(() => {}); S = state.open.get(s.id); }
+      if (!S) return toast("Couldn't open that chat.", "error");
+      quickSend(S, `Hand this off to the chat “${name(to)}” (id ${to}): ${ask}\n\nUse hand_off with to="${to}". Write the ask first, then what that chat needs to know from this one.`);
+      toast(`“${S.title || "This chat"}” is writing the handoff`);
+    };
+    box.querySelector("[data-k=go]").onclick = go;
+    ta.onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } };
+  }
+
   // ---------- Restart when idle ----------
   // Waits until no chat is replying, waiting on an approval, or running a job; then Tether quits, starts again and
   // reopens the same chats. The sidebar also offers it when Tether's own files changed on this Mac since it started.
-  const rs = { waiting: false, timer: 0 };
+  const rs = { waiting: false, timer: 0, chats: [], auto: false, mode: "restart", snooze: 0 };  // chats: what it waits for, [{sid, title, why}]
+
+  // Settings › Updates › Update on its own when idle. A new version on GitHub, or Tether's own files changed on this
+  // Mac, starts the same wait as Restart when idle. On its own it also waits for you: no message box holding text
+  // (a restart doesn't keep it) and no typing for a minute. A GitHub update waits while this Mac has changes not on
+  // GitHub, so work in progress is never set aside. Cancel pauses it for an hour.
+  let lastKey = 0;
+  addEventListener("keydown", () => { lastKey = Date.now(); }, true);
+  function autoCheck(kind) {  // kind: "update" (GitHub has a newer Tether) or "restart" (files changed here)
+    if (!state.settings?.auto_update || Date.now() < rs.snooze || rs.waiting || upd.waiting) return;
+    const i = upd.info || {};
+    if (kind === "update" && !(i.behind > 0 && !i.dirty && !i.ahead)) return;
+    rs.auto = true; rs.mode = kind; runRestart(false);
+  }
+  function yourHolds() {
+    const out = [];
+    for (const S of state.open.values()) {
+      const t = (S.sid === state.active ? $("#input").value : S.draft || "").trim();
+      if (t) out.push({ sid: S.sid, title: S.title || "New session", why: "message not sent" });
+    }
+    if (Date.now() - lastKey < 60000) out.push({ sid: "", title: "You", why: "typed in the last minute" });
+    return out;
+  }
   const busyChats = () => [...state.open.values()].filter(S => going(S) || jobsRunning(S).length);
   async function runRestart(force) {
+    const again = () => { clearTimeout(rs.timer); rs.timer = setTimeout(() => rs.waiting && runRestart(false), 3000); };
+    if (rs.auto && !force) {
+      const hold = yourHolds();
+      if (hold.length) { rs.waiting = true; rs.chats = hold; again(); return sync(); }
+    }
     const chats = [...state.open.values()].filter(S => S.status !== "new").map(S => ({ sid: S.sid, cwd: S.cwd, title: S.title || "" }));
-    const r = await api().restart_now(chats, state.active || "", !!force).catch(e => ({ error: String(e) }));
-    if (r.busy) { rs.waiting = true; clearTimeout(rs.timer); rs.timer = setTimeout(() => rs.waiting && runRestart(false), 3000); return sync(); }
-    rs.waiting = false; sync();
-    if (r.error) return toast(r.error, "error");
-    toast("Restarting Tether…");
+    const r = await (rs.mode === "update" ? api().update_now(chats, state.active || "") : api().restart_now(chats, state.active || "", !!force, rs.auto && !force))
+      .catch(e => ({ error: String(e) }));
+    if (r.busy) { rs.waiting = true; rs.chats = r.chats || []; clearTimeout(rs.timer); rs.timer = setTimeout(() => rs.waiting && runRestart(false), 3000); return sync(); }
+    const mode = rs.mode, auto = rs.auto;
+    rs.waiting = false; rs.chats = []; rs.auto = false; rs.mode = "restart"; sync();
+    if (r.error) { if (auto) rs.snooze = Date.now() + 3600e3; return toast(r.error, "error"); }
+    toast(mode === "update" ? "Updating Tether…" : "Restarting Tether…");
   }
-  function cancelRestart() { rs.waiting = false; clearTimeout(rs.timer); sync(); }
+  function cancelRestart() {
+    if (rs.auto) { rs.snooze = Date.now() + 3600e3; toast("Won't update on its own for an hour"); }
+    rs.waiting = false; rs.chats = []; rs.auto = false; rs.mode = "restart"; clearTimeout(rs.timer); sync();
+  }
+  // Under "Restarts when idle": each chat it's waiting for and why (replying, needs your answer, a job or agent
+  // running). Click one to go there. The list comes from Tether's own check, the same one that decides the restart.
+  function paintRestartList(line) {
+    const box = line.querySelector(".rl-list"), list = rs.chats.slice(0, 4);
+    const key = JSON.stringify(list) + state.active;
+    if (box.dataset.k === key) return;
+    box.dataset.k = key; box.innerHTML = "";
+    for (const c of list) {
+      const b = el(c.sid ? "button" : "div", "rl-row" + (c.why === "needs your answer" ? " warn" : "") + (c.sid ? "" : " you"), `<span class="nm"></span><span class="why"></span>`);
+      b.querySelector(".nm").textContent = (state.open.get(c.sid)?.title) || c.title;
+      b.querySelector(".why").textContent = c.why;
+      if (c.sid) b.title = "Go to this chat";
+      b.onclick = () => { if (state.open.has(c.sid)) activate(c.sid); };
+      box.appendChild(b);
+    }
+    if (rs.chats.length > list.length) box.appendChild(el("div", "rl-more", `and ${rs.chats.length - list.length} more`));
+  }
   function restartDialog(changed) {
     const n = busyChats().length;
     if (rs.waiting) {
@@ -396,7 +544,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     const box = openModal(`<h2>Restart Tether</h2><p class="modal-p">${why}${n ? `${n === 1 ? "A chat is" : n + " chats are"} still working. Restart when idle waits for ${n === 1 ? "it" : "them"} to finish, then reopens your chats.` : "Your open chats come back after the restart."}</p>
       <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button>${n ? `<button class="btn ans" data-k="now">${IC.restart}<span>Restart now</span></button><button class="btn primary ans" data-k="idle">${IC.restart}<span>Restart when idle</span></button>`
         : `<button class="btn primary ans" data-k="idle">${IC.restart}<span>Restart now</span></button>`}</div>`);
-    box.querySelector('[data-k="idle"]').onclick = () => { closeModal(); runRestart(false); };
+    box.querySelector('[data-k="idle"]').onclick = () => { closeModal(); rs.auto = false; rs.mode = "restart"; runRestart(false); };
     box.querySelector('[data-k="now"]')?.addEventListener("click", async () => {
       closeModal();
       const ok = await confirmBox("Restart now?", `${n === 1 ? "A chat is" : n + " chats are"} still working. Restarting now stops ${n === 1 ? "it" : "them"} in the middle.`, "Restart now");
@@ -407,6 +555,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     const r = await api().code_changed().catch(() => null);
     const b = $("#restart-btn");
     if (b) b.hidden = !r?.changed;
+    if (r?.changed) autoCheck("restart");
   }
 
   // ---------- kept in step with the rest ----------
@@ -419,9 +568,13 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     row.querySelector(".wt-dot").className = "wt-dot " + (n ? "warn" : "");
     renderWaiting();
     split.layout();
-    const line = $("#restart-line"), k = busyChats().length;
+    const line = $("#restart-line"), k = rs.chats.length;
     line.hidden = !rs.waiting;
-    if (rs.waiting) { line.querySelector(".t").textContent = k ? "Restarts when idle" : "Restarting…"; line.title = k ? `Waiting for ${k === 1 ? "1 chat" : k + " chats"} to finish` : ""; }
+    if (rs.waiting) {
+      const up = rs.mode === "update";
+      line.querySelector(".t").textContent = k ? `${up ? "Updates" : "Restarts"} after ${k === 1 ? "this finishes" : "these finish"}` : up ? "Updating…" : "Restarting…";
+      paintRestartList(line);
+    }
     $("#restart-btn").classList.toggle("wait", rs.waiting);
   }
   function init() {
@@ -430,11 +583,13 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     $("#waiting-row").onclick = () => waitOpen ? closeWaiting() : openWaiting();
     $("#restart-line .lnk-btn").onclick = cancelRestart;
     $("#restart-btn").onclick = () => restartDialog(true);
+    setTimeout(loadHandoffs, 2500);  // unsent ones from before a restart
+    setInterval(loadHandoffs, 30000);
     setTimeout(checkChanged, 20000);
     setInterval(checkChanged, 60000);
     setInterval(() => { if (waitOpen) renderWaiting(); }, 30000);
     sync();
   }
 
-  return { init, sync, turnEnd, userSpoke, fromHistory, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog };
+  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog };
 })();

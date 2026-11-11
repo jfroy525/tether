@@ -82,6 +82,16 @@ SPECS = [
                     "grant the app?\", \"why did we pin scramp?\"). Returns a short answer with line numbers. If it "
                     "finds nothing, try again with other words before asking the user.",
      "inputSchema": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}},
+    {"name": "hand_off",
+     "description": "Hand work to another of the user's Tether chats. Tether shows your text there as a message "
+                    "the user sends with one click (nothing is sent until they do). That chat can't see this one, so "
+                    "write it self-contained: the ask first, then what it needs from here (context, decisions and why, "
+                    "exact paths, IDs, commands, what's done and what's still open). Use it when the user asks you to "
+                    "hand off, pass or send something to another chat.",
+     "inputSchema": {"type": "object", "properties": {
+         "to": {"type": "string", "description": "the chat: its name as the user says it (\"the DPA chat\", \"Prism\") or its id"},
+         "text": {"type": "string", "description": "the message that chat gets, in Markdown"}},
+         "required": ["to", "text"]}},
     {"name": "session_notes",
      "description": "The running notes for this session and the sessions it continues: decisions, exact facts, open "
                     "items, gotchas and the user's preferences.",
@@ -121,7 +131,52 @@ def show_artifact(args: dict) -> dict:
     return {"content": [{"type": "text", "text": text}, {"type": "image", "data": r["jpeg"], "mimeType": "image/jpeg"}], "isError": False}
 
 
+SUPPORT = Path(os.environ.get("TETHER_SUPPORT") or Path.home() / "Library/Application Support/Tether")
+
+
+def _norm(t: str) -> str:
+    return " ".join("".join(c.lower() if c.isalnum() else " " for c in t).split())
+
+
+def hand_off(args: dict) -> tuple[bool, str]:
+    """Find the chat (from the list Tether keeps in chats.json) and leave the handoff for Tether to show there."""
+    import time, uuid  # noqa: E401
+    to, text, me = str(args.get("to") or "").strip(), str(args.get("text") or "").strip(), os.environ.get("ANVIL_SID", "")
+    if not to or not text:
+        return False, 'Pass {"to": "<chat name or id>", "text": "<the message>"}.'
+    try:
+        chats = json.loads((SUPPORT / "chats.json").read_text())
+    except (OSError, ValueError):
+        return False, "Tether hasn't listed its chats yet. Ask the user to open the sidebar once, then try again."
+    names = lambda L: "; ".join(f"{c['title']} ({c['group']}, id {c['sid'][:8]})" for c in L[:12])  # noqa: E731
+    others = [c for c in chats if c["sid"] != me]
+    hit = [c for c in others if c["sid"] == to or (len(to) >= 6 and c["sid"].startswith(to))]
+    want = _norm(to)
+    for drop in ("the ", "chat", "session"):  # "the DPA chat" -> "dpa"
+        want = _norm(want.replace(drop, " "))
+    if not hit and want:
+        hit = [c for c in others if _norm(c["title"]) == want or _norm(c["group"]) == want]
+        hit = hit or [c for c in others if want in _norm(c["title"]) or want in _norm(c["group"])]
+        if len(hit) > 1 and any(c["open"] for c in hit):  # prefer the open ones
+            hit = [c for c in hit if c["open"]]
+    if not hit:
+        return False, f"No chat matches \"{to}\". Open and pinned chats, then recent: {names(others)}. Use one of these ids, or ask the user which chat."
+    if len(hit) > 1:
+        return False, f"More than one chat matches \"{to}\": {names(hit)}. Pass the id of the right one, or ask the user."
+    c = hit[0]
+    me_c = next((x for x in chats if x["sid"] == me), None)
+    h = {"id": uuid.uuid4().hex[:12], "from_sid": me, "from_title": (me_c or {}).get("title") or "another chat",
+         "to_sid": c["sid"], "to_cwd": c["cwd"], "to_title": c["title"], "text": text[:20000], "at": time.time()}
+    d = SUPPORT / "handoffs"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{h['id']}.json").write_text(json.dumps(h, indent=1))
+    return True, (f"Handed off to “{c['title']}” ({c['group']}). It waits there as a message for the user to send; "
+                  "nothing is sent until they do. Tell the user in one line.")
+
+
 def call(name: str, args: dict) -> tuple[bool, str]:
+    if name == "hand_off":
+        return hand_off(args)
     if name == "list_windows":
         return True, screen.describe_windows()
     if name == "mark_up_screen":
