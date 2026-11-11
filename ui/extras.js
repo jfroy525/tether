@@ -76,6 +76,7 @@ const Extras = (() => {
     if (ev && ev.ok === false) return sync();
     if (S.held?.length) return sync();  // a queued message of yours goes next
     S.ask = parseAsk(src);
+    if (S.ask && (S.sid === state.active || split.has(S.sid))) S.ask.seen = true;  // it came in while you were looking
     drawAnswers(S);
     sync();
   }
@@ -105,7 +106,7 @@ const Extras = (() => {
         out.push({ S, id: "p" + rid, kind: card.ev.kind === "question" ? "Question" : card.ev.kind === "plan" ? "Plan" : "Permission", at: card.at, rid, ev: card.ev });
       }
       if (S.perms.size || going(S)) continue;
-      if (S.ask && !S.ask.old) out.push({ S, id: "a" + S.sid + S.ask.at, kind: "Question", at: S.ask.at, ask: S.ask });
+      if (S.ask && !S.ask.old && !S.ask.seen) out.push({ S, id: "a" + S.sid + S.ask.at, kind: "Question", at: S.ask.at, ask: S.ask });
       else if (S.unseen) out.push({ S, id: "d" + S.sid + (S.doneAt || 0), kind: "Finished", at: S.doneAt || Date.now(), text: S.lastSaid || "" });
       if (S.jobFailed) out.push({ S, id: "j" + S.sid, kind: "Job failed", at: Date.now(), text: "A background job in this chat failed." });
     }

@@ -1580,6 +1580,8 @@ function onEvent(ev) {
   switch (ev.type) {
     case "session_state": if (S) setStatus(S, ev); break;
     case "models": state.models = ev.models || []; fillModels(); break;
+    case "other_models": state.other = ev; fillModels(); { const l = $("#om-line"); if (l) l.textContent = omLine(); } break;
+    case "model_refused": if (S) S.refused = true, add(S, errRow(S, `${ev.host || "The gateway"} refused ${ev.name || ev.model} (${ev.status}), so Tether stopped instead of retrying for minutes and took it out of the model menu. Pick another model.`)); break;
     case "notes":
       if (S) { S.notesProg = ev.busy && ev.of ? `${ev.done}/${ev.of}` : ""; if (state.panel && state.tab === "notes" && state.active === S.sid) renderNotes(S, $("#panel-body")); }
       if (!ev.busy && ev.error) toast("Notes: " + ev.error, "error");
@@ -1649,8 +1651,9 @@ function onEvent(ev) {
     case "result": if (S) thinkDone(S);
       if (S) {
         thinkDone(S); endText(S); if (S.think && state.view !== "thinking") S.think.open = false;
-        if (!ev.ok && ev.error) add(S, errRow(S, ev.error));
-        const bits = [ev.ok ? "Done" : (ev.subtype || "Stopped")];
+        if (!ev.ok && ev.error && !S.refused) add(S, errRow(S, ev.error));  // a refused model already said why
+        const bits = [ev.ok ? "Done" : S.refused ? "Stopped" : (ev.subtype || "Stopped")];
+        S.refused = false;
         if (ev.seconds) bits.push(`${ev.seconds}s`);
         add(S, el("div", "footnote", bits.join(" · ")));
         if (S.sid !== state.active && !Extras.split.has(S.sid)) S.unseen = true;
@@ -2265,6 +2268,7 @@ function activate(sid, keep) {  // keep: a click inside the other half of a spli
   SideQ.show(S);
   if (!S) return;
   S.unseen = false;
+  if (S.ask) S.ask.seen = true;  // a question you've looked at leaves Waiting on you; its buttons stay in the chat
   S.jobFailed = false;
   $("#input").value = S.draft || "";
   autogrow();
@@ -2367,12 +2371,25 @@ function renderRunMenu() {
   const m = $("#run-menu"), pick = (sel, v) => { const x = $(sel); if (x.value === v) return; x.value = v; x.dispatchEvent(new Event("change")); };
   const sub = t => (t || "").replace(/^[^·]*·\s*/, "");  // "Opus 5.5 · Best for everyday work" → "Best for everyday work"
   const opt = (sel, o, extra = "") => `<div class="it${o.value === $(sel).value ? " on" : ""}${extra}" data-sel="${sel}" data-v="${esc(o.value)}" title="${esc(o.title || "")}"><span class="ck">✓</span><span class="txt"><span class="a">${esc(sel === "#model-sel" ? modelFull(o) : o.textContent)}</span>${o.title ? `<span class="b">${esc(sub(o.title))}</span>` : ""}</span></div>`;
-  m.innerHTML = `<div class="run-cols"><div class="run-col"><div class="hd">Model</div>${[...$("#model-sel").options].map(o => opt("#model-sel", o)).join("")}</div>
+  const mOpts = [...$("#model-sel").options], inGroup = o => o.parentElement.tagName === "OPTGROUP";
+  let others = "";
+  if (state.other?.on) {
+    const oth = mOpts.filter(inGroup), open = state.otherOpen ?? oth.some(o => o.value === $("#model-sel").value);
+    let last = "";
+    const rows = oth.map(o => { const g = o.parentElement.label, h = g !== last ? `<div class="og">${esc(g)}</div>` : ""; last = g; return h + opt("#model-sel", o); }).join("");
+    others = `<div class="it run-other-t${open ? " open" : ""}" data-other-toggle><span class="ck"></span><span class="txt"><span class="a">Other models</span><span class="b">${oth.length ? `Through ${esc(state.other.host || "your gateway")}` : state.other.busy ? "Checking which ones work…" : "None answered the last check"}</span></span><span class="chev">›</span></div>
+      <div class="run-other"${open ? "" : " hidden"}>${rows}<div class="it" data-other-add><span class="ck"></span><span class="txt"><span class="a">Other model…</span><span class="b">Type a model ID; Tether checks it first</span></span></div></div>`;
+  }
+  m.innerHTML = `<div class="run-cols"><div class="run-col"><div class="hd">Model</div>${mOpts.filter(o => !inGroup(o)).map(o => opt("#model-sel", o)).join("")}${others}</div>
     <div class="run-col"><div class="hd">Permissions<span class="kbd">⇧Tab</span></div>
     ${[...$("#mode-sel").options].map(o => opt("#mode-sel", o, o.value === "bypassPermissions" ? " risky" : "")).join("")}</div></div>
     <div class="sep"></div><div class="hd">Effort</div>
     <div class="seg run-eff">${[...$("#effort-sel").options].map(o => `<button data-sel="#effort-sel" data-v="${o.value}" class="${o.value === $("#effort-sel").value ? "on" : ""}">${EFFORT_SHORT[o.value]}</button>`).join("")}</div>
     ${state.open.get(state.active) ? `<div class="sep"></div><div class="hd">Context</div><div id="run-ctx" class="run-ctx"></div>` : ""}`;
+  const tg = m.querySelector("[data-other-toggle]");
+  if (tg) tg.onclick = e => { e.stopPropagation(); state.otherOpen = !tg.classList.contains("open"); renderRunMenu(); };
+  const add = m.querySelector("[data-other-add]");
+  if (add) add.onclick = e => { e.stopPropagation(); m.hidden = true; otherModelDialog(); };
   m.querySelectorAll("[data-sel]").forEach(n => n.onclick = e => {
     e.stopPropagation();
     if (n.dataset.sel !== "#effort-sel") m.hidden = true;
@@ -2382,6 +2399,30 @@ function renderRunMenu() {
   const S = state.open.get(state.active);
   if (S && $("#run-ctx")) { renderCtx(S); if (typed) $("#ctx-focus").value = typed; }
   fitRunMenu();
+}
+// Other model…: any model id the gateway serves. Tether sends it one tiny request first and only switches if it answers.
+function otherModelDialog() {
+  const box = openModal(`<h2>Use another model</h2>
+    <label class="ho-f"><span>Model ID</span><input type="text" class="field" data-k="id" spellcheck="false" autocapitalize="off" placeholder="azure/gpt-6.1-sol"></label>
+    <p class="modal-p om-err" hidden></p>
+    <div class="modal-acts"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-k="go">Check and use</button></div>`);
+  const input = box.querySelector("[data-k=id]"), go = box.querySelector("[data-k=go]"), err = box.querySelector(".om-err");
+  const run = async () => {
+    const id = input.value.trim();
+    if (!id) return input.focus();
+    go.disabled = true; go.textContent = "Checking…"; err.hidden = true;
+    const r = await api().other_model_add(id).catch(e => ({ error: String(e) }));
+    go.disabled = false; go.textContent = "Check and use";
+    if (r.error) { err.textContent = r.error; err.hidden = false; return; }
+    closeModal();
+    state.other = await api().other_models(); state.otherOpen = true; await fillModels();
+    const sel = $("#model-sel");
+    if (state.open.get(state.active) && sel.value !== r.value) { sel.value = r.value; sel.dispatchEvent(new Event("change")); syncRun(); }
+    else toast(`${r.displayName} works; it's in the model menu under Other models.`);
+  };
+  go.onclick = run;
+  input.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); run(); } };
+  setTimeout(() => input.focus(), 30);
 }
 // The menu floats above the whole window, anchored to the chip, so a narrow chat column (side panel open, small
 // window) never squeezes it or tucks it under the sidebar. Only a window too small for two columns stacks them.
@@ -2795,10 +2836,17 @@ function pickSlash(c) { $("#input").value = `/${c} `; hideSlash(); $("#input").f
 // models
 async function fillModels() {
   if (!state.models.length) state.models = await api().models();
+  if (!state.other) state.other = await api().other_models().catch(() => null);
   const sel = $("#model-sel");
-  sel.innerHTML = `<option value="">Default model</option>` + state.models.filter(m => m.value !== "default").map(m =>
-    `<option value="${esc(m.value)}" title="${esc(m.description || "")}">${esc(m.displayName || m.value)}</option>`).join("");
+  const option = m => `<option value="${esc(m.value)}" title="${esc(m.description || "")}">${esc(m.displayName || m.value)}</option>`;
+  const groups = {};  // non-Claude models a gateway serves (gateway.py), by maker
+  for (const m of state.other?.models || []) (groups[m.group] ||= []).push(m);
+  sel.innerHTML = `<option value="">Default model</option>` + state.models.filter(m => m.value !== "default").map(option).join("")
+    + Object.entries(groups).map(([g, ms]) => `<optgroup label="${esc(g)}">${ms.map(option).join("")}</optgroup>`).join("");
   const S = state.open.get(state.active);
+  // a chat on a model that's no longer listed (refused, or the gateway dropped it) still shows its own name
+  for (const v of new Set([S?.model, ...[...state.open.values()].map(x => x.model)]))
+    if (v && ![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("beforeend", option({ value: v, displayName: otherName(v) }));
   if (S) { sel.value = S.model || ""; syncModes(S); } else syncRun();  // the Fast button follows the model list too
 }
 
@@ -3317,7 +3365,11 @@ const usd = v => v == null ? "–" : v >= 100 ? `$${Math.round(v).toLocaleString
 const tok = n => n == null ? "–" : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n.toLocaleString();
 const dur = ms => { if (!ms) return "–"; const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h`; };
 const day = iso => iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "–";
+// a gateway model's name: "azure/gpt-6.1-sol" -> "GPT 6.1 Sol" (the list's name when Tether has it)
+const otherName = v => state.other?.models?.find(m => m.value === v)?.displayName
+  || v.split("/").pop().split(/[-_]/).map(w => /^gpt$|^oss$|^\d+b$/i.test(w) ? w.toUpperCase() : /^[a-z]+$/.test(w) ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
 const modelName = m => {
+  if (m.includes("/")) return otherName(m);
   const long = /\[1m\]$/.test(m);
   const parts = m.replace(/^claude-/, "").replace(/\[1m\]$/, "").split("-");
   const nums = parts.slice(1).filter(p => /^\d{1,2}$/.test(p));
@@ -3454,6 +3506,7 @@ async function renderStats(S, body) {
     const cost = sec("Cost by model", ms.map(m => { const r = replies[modelName(m.model)]; return bar(modelName(m.model), m.usd || 0, maxC, usd(m.usd), r ? `${r.toLocaleString()} repl${r === 1 ? "y" : "ies"}` : ""); }));
     cost.appendChild(line(`${tok(totalTok)} tokens · ${totalTok ? Math.round(sum("cache_read") / totalTok * 100) : 0}% cache reads`));
     if (c.unknown_model_cost) cost.appendChild(el("div", "st-note", "Some models had no known price, so the cost is a lower bound."));
+    if (c.guessed?.length) cost.appendChild(el("div", "st-note", `${c.guessed.join(", ")} ${c.guessed.length === 1 ? "has" : "have"} no listed price, so ${c.guessed.length === 1 ? "its" : "their"} cost is Claude Code's estimate.`));
     if (c.missing) cost.appendChild(el("div", "st-note", `${c.missing} session${c.missing === 1 ? " has" : "s have"} no cost record, so the cost is a lower bound.`));
   } else {
     sec("Cost by model", [el("div", "st-note", "No cost record in this session yet.")]);
@@ -3585,11 +3638,18 @@ function openModal(html) {
 }
 function closeModal() { $("#modal").hidden = true; $(".modal-box").classList.remove("sheet"); applyTheme(state.settings.theme); applyText(state.settings.text_size, state.settings.bold_accent); applyWidth(state.settings.chat_width); }
 
+function omLine() {
+  const o = state.other || {};
+  if (o.busy) return "Checking…";
+  const n = (o.models || []).length, t = o.checked_at;
+  return `${n} working` + (t ? ` · checked ${new Date(t * 1000).toDateString() === new Date().toDateString() ? "today" : ago(t)}` : "");
+}
 async function settingsDialog() {
   const { settings: s, hotkeys, mics } = await api().get_settings();
   const mac = await api().permissions().catch(() => ({}));  // a line under a setting when macOS has it switched off
   const macOff = (what, pane) => row(`<span class="dim">${what}</span>`, `<button class="btn ghost small" data-mac="${pane}">Open</button>`);
   if (!state.models?.length) state.models = await api().models();  // the model list for new chats
+  if (!state.other) state.other = await api().other_models().catch(() => null);
   const opts = (pairs, v) => pairs.map(([k, l]) => `<option value="${esc(k)}" ${k === v ? "selected" : ""}>${esc(l)}</option>`).join("");
   const keys = v => opts(Object.entries(hotkeys), v);
   const row = (label, control, tip) => `<div class="setrow"${tip ? ` title="${esc(tip)}"` : ""}><label>${label}</label>${control}</div>`;
@@ -3598,8 +3658,11 @@ async function settingsDialog() {
   const box = openModal(`<h2>Settings</h2>
     ${sec("Sessions", row("Keep notes for long sessions", sw("keep_notes", s.keep_notes !== false), "Haiku keeps running notes once a session gets long (about a cent per update). Recall and Continue in a new session use them")
       + row("Start fresh automatically", `<select data-k="auto_fresh">${opts([["0", "Never (compact instead)"], ["150000", "At 150k tokens"], ["200000", "At 200k tokens (recommended)"], ["300000", "At 300k tokens"]], String(s.auto_fresh ?? 200000))}</select>`, "When a conversation gets long, Tether continues it in a fresh session with its notes and recall into the old one. Cheaper than letting it grow; nothing for you to do")
-      + row("Model for new chats", `<select data-k="model">${opts([["", "Claude Code default"], ...(state.models || []).filter(m => m.value !== "default").map(m => [m.value, m.displayName || m.value])], s.model)}</select>`,
+      + row("Model for new chats", `<select data-k="model">${opts([["", "Claude Code default"], ...(state.models || []).filter(m => m.value !== "default").map(m => [m.value, m.displayName || m.value]),
+        ...(state.other?.models || []).map(m => [m.value, `${m.displayName} (${m.group})`])], s.model)}</select>`,
       "The model picker by the message box changes only the chat you're in")
+      + (state.other?.on ? row("Other models", `<span class="upd-row"><span id="om-line">${esc(omLine())}</span><button class="btn ghost small" id="om-check">Check now</button></span>`,
+        `Non-Claude models ${state.other.host || "your gateway"} serves. Tether reads its list once a day (free) and sends one tiny request to each new model (a third of a cent at most); failures cost nothing. Check now rechecks all of them, about 10 cents`) : "")
       + row("Effort for new chats", `<select data-k="effort">${opts([["", "Claude Code default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]], s.effort)}</select>`)
       + row("Start new sessions in", `<select data-k="perm_mode">${opts([["", "Claude Code default"], ...[...$("#mode-sel").options].map(o => [o.value, o.text])], s.perm_mode)}</select>`,
       "Also applies when you open a past session. The mode menu by the message box changes only the session you're in"))}
@@ -3645,6 +3708,8 @@ async function settingsDialog() {
   renderUpdRow();
   if (!upd.last) checkUpdate();
   box.querySelector("#restart-open").onclick = () => { closeModal(); Extras.restartDialog(); };
+  const omc = box.querySelector("#om-check");
+  if (omc) omc.onclick = async () => { omc.disabled = true; state.other = { ...state.other, busy: true }; $("#om-line").textContent = omLine(); await api().other_models_check(); setTimeout(() => omc.disabled = false, 4000); };
   box.querySelector("#upd-check").onclick = async e => { e.target.disabled = true; $("#upd-line").textContent = "Checking…"; await checkUpdate(true); e.target.disabled = false; };
   box.querySelector("#fast-recheck")?.addEventListener("click", async e => {
     state.settings = await api().save_settings({ fast_unavailable: "" });
@@ -3974,7 +4039,7 @@ async function runUpdate() {
 }
 async function reopenAfterUpdate() {
   const r = await api().take_reopen();
-  for (const c of r.chats || []) { await openSession(c.sid, c.cwd, c.title).catch(() => {}); const S = state.open.get(c.sid); if (S?.ask) S.ask.old = false; }
+  for (const c of r.chats || []) { await openSession(c.sid, c.cwd, c.title).catch(() => {}); const S = state.open.get(c.sid); if (S?.ask) { S.ask.old = false; S.ask.seen = false; } }
   if (r.active && state.open.has(r.active)) activate(r.active);
   if (r.chats?.length) renderSidebar();
 }

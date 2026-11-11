@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
+import gateway
+
 HERE = Path(__file__).resolve().parent
 SEARCH_PATHS = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/bin/claude", "~/.claude/local/claude"]
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -271,7 +273,7 @@ class Session:
         cmd = [binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                "--include-partial-messages", "--replay-user-messages", "--permission-prompts", "host", "--permission-prompt-tool", "stdio",
                "--mcp-config", json.dumps(mcp), "--settings", json.dumps({**({"fastMode": True} if self.fast and not self.settings.get("fast_unavailable") else {}), **self.extra_settings}),
-               "--append-system-prompt", APP_PROMPT]
+               "--append-system-prompt", APP_PROMPT + ("\n" + gateway.IGNORE_TOOLS if gateway.is_other(self.model) else "")]
         # Claude Code saves a session only once it gets a message; one that restarted before that (a model switch,
         # a context check) isn't on disk yet, and --resume would fail with "No conversation found"
         saved = self.resume and any((Path.home() / ".claude" / "projects").glob(f"*/{self.sid}.jsonl"))
@@ -373,6 +375,7 @@ class Session:
     # ----- talking to it -----
 
     def send(self, text: str, images: list[dict] | None = None) -> None:
+        self._refused = False
         if self._restart_pending and not self.running_jobs():  # a model or effort switch that waited for a job
             self._restart_pending = False
             self.close()
@@ -700,6 +703,15 @@ class Session:
                 self._task(e)
             elif e.get("subtype") == "background_tasks_changed":
                 self._bg_list(e.get("tasks") or [])
+            elif e.get("subtype") == "api_retry":
+                # Claude Code retries a refused model for minutes, then shows the refusal as a reply. For a gateway
+                # model a 403/404 won't change on a retry: stop now and say so (workbench hides the model)
+                model = self.model or self.api_model or ""
+                if gateway.is_other(model) and e.get("error_status") in (403, 404) and not getattr(self, "_refused", False):
+                    self._refused = True
+                    self.emit({"type": "model_refused", "sid": sid, "model": model, "status": e.get("error_status"),
+                               "error": str(e.get("error") or ""), "name": gateway.name(model), "host": gateway.host()})
+                    self.interrupt()
             elif e.get("subtype") == "status":
                 if e.get("status") == "requesting":  # a request to the model just went out; its thinking arrives only when it's done
                     self.emit({"type": "requesting", "sid": sid})

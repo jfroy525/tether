@@ -1384,5 +1384,12 @@ body.pin-dragging .sess .acts { display: none !important; }
 .ho-st { font-size: var(--fs-meta); color: var(--text-3); }
 .handoff.done { padding-top: 9px; padding-bottom: 9px; } .handoff.done .ho-body { display: none; } .handoff.done .ho-hd { margin-bottom: 0; } .handoff.done .ho-acts { margin-top: 4px; }
 .ho-f { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; font-size: var(--fs-meta); color: var(--text-2); }
-.ho-f select.field, .ho-f textarea.field { width: 100% !important; max-width: none; box-sizing: border-box; }
+.ho-f select.field, .ho-f textarea.field, .ho-f input.field { width: 100% !important; max-width: none; box-sizing: border-box; }
 .ho-f textarea.field { min-height: 96px; resize: vertical; line-height: 1.45; padding-top: 8px; }
+/* run menu: other models a gateway serves, folded under one row */
+.run-menu .it.run-other-t { align-items: center; }
+.run-menu .it.run-other-t .chev { margin-left: auto; color: var(--text-3); transition: transform .2s; }
+.run-menu .it.run-other-t.open .chev { transform: rotate(90deg); }
+.run-menu .run-other { max-height: 300px; overflow-y: auto; margin: 0 0 4px; }
+.run-menu .run-other .og { font-size: 11px; font-weight: 600; color: var(--text-3); padding: 8px 10px 2px 34px; }
+.modal-p.om-err { color: var(--danger); margin-top: -6px; }

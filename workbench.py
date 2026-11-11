@@ -27,6 +27,7 @@ except ImportError:
 
 import artifacts
 import engine
+import gateway
 import history
 import notes
 import recall
@@ -124,6 +125,7 @@ class Api:
                                    key_id=1, name="voice key")
         self._circle_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle), key_id=2, name="circle key")
         self._markup_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle, "window"), key_id=3, name="markup key")
+        self._other = gateway.OtherModels(SUPPORT, self._emit)  # non-Claude models a gateway serves (gateway.py)
         threading.Thread(target=self._send_loop, daemon=True).start()
 
     @staticmethod
@@ -134,6 +136,8 @@ class Api:
 
     def _emit(self, ev: dict) -> None:
         t, sid = ev.get("type"), ev.get("sid")
+        if t == "model_refused":
+            self._bg(self._other.refused, ev.get("model") or "", ev.get("status") or 0, ev.get("error") or "")
         if t == "markup":
             self._bg(self._markup, ev.get("marks") or [])
         if t == "artifact" and ev.get("path"):  # each show is a version, with Claude's note of what changed
@@ -688,6 +692,8 @@ class Api:
                                        "thinking": v.get("thinkingTokens"), "cache_read": v.get("cacheReadInputTokens"),
                                        "cache_write": v.get("cacheCreationInputTokens")}
                                       for k, v in sorted(live["models"].items(), key=lambda kv: -(kv[1].get("costUSD") or 0))]}
+        if out.get("cost"):
+            out["cost"] = self._other.reprice(out["cost"])
         return out
 
     def session_stats(self, sid):
@@ -734,6 +740,7 @@ class Api:
             out["cost"] = {"usd": ck("usd"), "api_ms": ck("api_ms"), "tool_ms": ck("tool_ms"), "wall_ms": ck("wall_ms"),
                            "lines_added": ck("lines_added"), "lines_removed": ck("lines_removed"),
                            "unknown_model_cost": any(c.get("unknown_model_cost") for c in costs), "missing": len(saved) - len(costs),
+                           "guessed": sorted({g for c in costs for g in c.get("guessed") or []}),
                            "models": sorted(models.values(), key=lambda m: -(m.get("usd") or 0))}
         return out
 
@@ -1114,6 +1121,26 @@ class Api:
             return json.loads(cache.read_text())
         except (OSError, ValueError):
             return []
+
+    # ----- other models through a gateway (gateway.py)
+    def other_models(self):
+        return self._other.listing()
+
+    def other_models_check(self):
+        """Settings › Check now: recheck every model the gateway lists; the result arrives as an other_models event."""
+        self._other.refresh_later(full=True)
+        return {"ok": True}
+
+    def other_model_add(self, mid):
+        return self._other.add(mid)
+
+    def _watch_other_models(self):
+        while True:  # free list read at most daily; only new or failed models get a request
+            try:
+                self._other.refresh()
+            except Exception as exc:  # never let a gateway hiccup end the thread
+                print(f"[models] check failed: {exc}", flush=True)
+            time.sleep(3600)
 
     def _remember_models(self):
         """At startup, ask Claude Code for its model menu (a short-lived `claude -p` initialize), so the picker
@@ -2449,6 +2476,7 @@ def main() -> int:
             AppHelper.callAfter(notifier.setup, api._notice_clicked)
         api._dictation.warm(api.settings["whisper_model"])
         threading.Thread(target=api._remember_models, daemon=True).start()
+        threading.Thread(target=api._watch_other_models, daemon=True).start()
         threading.Thread(target=api._watch_files, daemon=True).start()
         threading.Thread(target=api._watch_dock, daemon=True).start()
     webview.start(started)
