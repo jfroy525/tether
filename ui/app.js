@@ -1778,6 +1778,68 @@ function groupsOf(items) {  // for the new-session picker: folders with sessions
 const info = sid => state.sessions.find(s => s.id === sid);
 function liveStatus(S) { return S.unseen && S.status === "idle" ? "done" : S.status; }
 
+// Drag a pinned chat up or down to change the order. The row lifts and follows the pointer, the others slide aside,
+// and the order is saved when you let go. A press that doesn't move is still a click. While a row is held the
+// sidebar doesn't redraw (a status change would drop it); it redraws once at the end.
+let pinDrag = null, pinDragEnd = 0;
+function wirePinDrag(blk) {
+  blk.addEventListener("pointerdown", e => {
+    const r = e.target.closest(".sess.pinned");
+    if (!r || e.button !== 0 || pinDrag || state.search.trim() || r.classList.contains("confirm") || e.target.closest("button, input, textarea, [contenteditable]")) return;
+    const list = [...blk.querySelectorAll(":scope > .sess.pinned")];
+    if (list.length < 2) return;
+    const y0 = e.clientY, pid = e.pointerId;
+    let d = null;
+    const move = ev => {
+      if (ev.pointerId !== pid) return;
+      if (!d) {
+        if (Math.abs(ev.clientY - y0) < 5) return;
+        const rects = list.map(x => x.getBoundingClientRect()), from = list.indexOf(r);
+        const gap = Math.max(0, rects[1].top - rects[0].bottom);
+        d = pinDrag = { r, list, rects, from, to: from, step: rects[from].height + gap };
+        document.body.classList.add("pin-dragging");
+        r.classList.add("lifted");
+        list.forEach(x => x !== r && x.classList.add("shift"));
+      }
+      ev.preventDefault();
+      const R = d.rects, me = R[d.from];
+      const dy = Math.max(R[0].top - me.top - 6, Math.min(R[R.length - 1].bottom - me.bottom + 6, ev.clientY - y0));
+      r.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const mid = me.top + me.height / 2 + dy;
+      d.to = R.reduce((n, q, i) => n + (i !== d.from && q.top + q.height / 2 < mid ? 1 : 0), 0);
+      d.list.forEach((x, i) => {
+        if (x === r) return;
+        const off = d.from < d.to && i > d.from && i <= d.to ? -d.step : d.to < d.from && i >= d.to && i < d.from ? d.step : 0;
+        x.style.transform = off ? `translateY(${off}px)` : "";
+      });
+    };
+    const up = ev => {
+      if (ev.pointerId !== pid) return;
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+      if (!d) return;
+      pinDragEnd = Date.now();
+      const R = d.rects, me = R[d.from];
+      const top = d.to < d.from ? R[d.to].top : d.to > d.from ? R[d.to].bottom - me.height : me.top;
+      r.classList.add("settle");
+      r.style.transform = `translateY(${top - me.top}px)`;
+      const order = d.list.map(x => x.dataset.sid);
+      order.splice(d.to, 0, order.splice(d.from, 1)[0]);
+      setTimeout(() => {
+        pinDrag = null;
+        document.body.classList.remove("pin-dragging");
+        if (d.to !== d.from) {
+          state.pinOrder = [...order, ...(state.pinOrder || []).filter(x => !order.includes(x))];
+          api().set_meta("", "pin_order", state.pinOrder).catch(() => toast("Couldn't save the new order"));
+        }
+        renderSidebar();
+      }, 190);
+    };
+    addEventListener("pointermove", move, { passive: false });
+    addEventListener("pointerup", up);
+    addEventListener("pointercancel", up);
+  });
+}
+
 function sessRow(s, kind) {
   // kind: active | pinned | recent
   const sid = s.id, S = state.open.get(sid);
@@ -1804,7 +1866,7 @@ function sessRow(s, kind) {
   if (S) act("✕", "Close (⌘W)", () => closeSession(sid));
   else act("⌫", s.archived ? "Unarchive" : "Archive", () => setMeta(sid, "archived", !s.archived));
   act("⋯", "More", () => sessionMenu(s, acts.lastChild));
-  r.onclick = () => openSession(sid, s.cwd, title);
+  r.onclick = () => { if (Date.now() - pinDragEnd > 250) openSession(sid, s.cwd, title); };
   r.ondblclick = e => { e.preventDefault(); rename(r, s); };
   r.onauxclick = e => { if (e.button === 1 && S) closeSession(sid); };
   r.oncontextmenu = e => { e.preventDefault(); sessionMenu(s, null, e.clientX, e.clientY); };
@@ -1843,6 +1905,7 @@ function bucketOf(t) {
 
 function renderSidebar() {
   Extras.sync();
+  if (pinDrag) return;  // redrawn when the drag ends
   const box = $("#side-list");
   const keep = box.scrollTop;
   box.innerHTML = "";
@@ -1885,6 +1948,7 @@ function renderSidebar() {
     const blk = el("div", "side-block pinned");
     section(blk, "Pinned", pinned.length);
     pinned.forEach(s => blk.appendChild(sessRow(s, "pinned")));
+    wirePinDrag(blk);
     box.appendChild(blk);
   }
   if (openOnly.length || (idle.length && !pinned.length)) {
@@ -2061,7 +2125,7 @@ function renderRecentRepos() {
   });
 }
 
-async function openSession(sid, cwd, title) {
+async function openSession(sid, cwd, title, quiet) {
   if (!state.open.has(sid)) {
     const r = await api().open_session(sid, cwd, title || "");
     const S = makeSession({ ...r, title });
@@ -2070,7 +2134,7 @@ async function openSession(sid, cwd, title) {
     if (r.parts?.length) olderPartButton(S, r.parts);
     if (r.pending_fresh) add(S, freshCard(S, { from: r.parts?.[0]?.slice(0, 8) }));  // started fresh, first message not sent yet
   }
-  activate(sid);
+  if (!quiet) activate(sid);
 }
 // A click on a Mac notification: that chat, open or not.
 function openFromNotice(ev) {
@@ -2183,6 +2247,7 @@ async function newFolderDialog() {
 }
 
 function activate(sid, keep) {  // keep: a click inside the other half of a split; don't jump to the bottom or take the cursor
+  if (Extras.split.isOn() && !Extras.split.moving()) return Extras.split.morph(() => activate(sid, keep));
   const prev = state.open.get(state.active);
   if (prev) { prev.draft = $("#input").value; }
   state.active = sid;
@@ -2835,7 +2900,7 @@ function setMini(on) {
   const b = document.body, now = b.classList.contains("mini");
   on = on ?? !now;
   if (on === now) return;
-  if (on) Extras.split.off();
+  if (on) Extras.split.off(true);
   if (!b.style.getPropertyValue("--mini-ease") && CSS.supports("transition-timing-function", "linear(0, 1)")) b.style.setProperty("--mini-ease", springCurve());
   const S = state.open.get(state.active), bottom = S && (on || nearBottom(S));  // the mini window shows the latest messages
   b.classList.add("mini-go");

@@ -269,7 +269,8 @@ class Api:
                 "switches": m.get("switches") or {}}  # {sid: [{ts, text}]} model and effort changes, shown in the chat
 
     def set_meta(self, sid, key, value):
-        """key: title (text, "" = back to Claude's), pinned (bool), archived (bool), model ([model, effort]), perm_mode (text)."""
+        """key: title (text, "" = back to Claude's), pinned (bool), archived (bool), model ([model, effort]), perm_mode (text),
+        pin_order (list of pinned ids, sid unused)."""
         m = self._meta()
         if key == "title":
             if str(value).strip():
@@ -284,6 +285,9 @@ class Api:
             m["modes"][sid] = str(value)
         elif key == "repo":
             m["repos"][sid] = str(value)
+        elif key == "pin_order":  # value: pinned ids in the order you dragged them; pins themselves don't change
+            want = [x for x in (value or []) if x in m["pinned"]]
+            m["pinned"] = want + [x for x in m["pinned"] if x not in want]
         elif key in ("pinned", "archived"):
             ids = [x for x in m[key] if x != sid]
             m[key] = ([sid] + ids) if value else ids

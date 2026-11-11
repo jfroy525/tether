@@ -144,30 +144,111 @@ const Extras = (() => {
   // Both chats stay live. The one you click is the chat in front: the message box, approvals and the Running note
   // move under it, and the other side shows a quiet box that takes you there.
   const sp = { on: false, sides: [], pct: 50 };
+
+  // Motion: whatever changes the split runs inside morph(). It measures where things were, makes the change, then
+  // plays the difference: a chat that comes in slides from its own edge, the one that stays glides its text to the
+  // new place, the message box glides with the chat in front, and a chat that leaves slides out the way it came.
+  // Only positions move (no width animating frame by frame), so long chats stay smooth. Reduce motion turns it off.
+  const EASE = "cubic-bezier(.22, 1, .36, 1)", DUR = 420;
+  let moving = false, anims = [];
+  const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const shown = () => [...state.open.values()].filter(S => !S.el.hidden);
+  function play(node, frames, opts, done) {
+    const a = node.animate(frames, { duration: DUR, easing: EASE, ...opts });
+    anims.push(a);
+    a.onfinish = a.oncancel = () => { anims = anims.filter(x => x !== a); done && done(); };
+  }
+  function morph(fn) {
+    const chats = $("#chats"), comp = $("#composer");
+    if (moving || still() || !chats || document.body.classList.contains("mini")) { moving = true; try { return fn(); } finally { moving = false; } }
+    anims.slice().forEach(a => a.finish());
+    const wasOn = sp.on, c0 = chats.getBoundingClientRect();
+    const textLeft = S => S.inner.getBoundingClientRect().left + parseFloat(getComputedStyle(S.inner).paddingLeft || 0);
+    const before = new Map(shown().map(S => [S, { box: S.el.getBoundingClientRect(), text: textLeft(S),
+      top: S.el.scrollTop, pad: getComputedStyle(S.el).paddingTop, ipl: getComputedStyle(S.inner).paddingLeft, ipr: getComputedStyle(S.inner).paddingRight }]));
+    const cbox = () => comp && !comp.hidden && comp.querySelector(".composer-box");
+    const k0 = cbox() ? cbox().getBoundingClientRect() : null;
+    moving = true;
+    try { fn(); } finally { moving = false; }
+    const now = shown(), c = chats.getBoundingClientRect();
+    if (!wasOn && !sp.on) return;  // plain switch between chats: Tether's own fade does that
+    chats.style.overflow = "hidden";
+    let left = 0;
+    const end = () => { if (--left <= 0) chats.style.overflow = ""; };
+    const go = (node, frames, opts, done) => { left++; play(node, frames, opts, () => { done && done(); end(); }); };
+    for (const S of now) {
+      const b = before.get(S);
+      if (b) {  // stays: the chat glides so its text starts where it was, and opens up from its old edges as it grows
+        const nb = S.el.getBoundingClientRect(), dx = b.text - textLeft(S);
+        if (Math.abs(dx) > 1) {
+          const l = Math.max(0, b.box.left - (nb.left + dx)), r = Math.max(0, nb.right + dx - b.box.right);
+          go(S.el, [{ transform: `translateX(${dx}px)`, clipPath: `inset(0 ${r}px 0 ${l}px)` }, { transform: "none", clipPath: "inset(0 0 0 0)" }]);
+        }
+      } else if (wasOn && sp.on) {  // a chat from the sidebar takes a side: it settles in place
+        go(S.el, [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { duration: 280 });
+      } else {  // the new side slides in from its own edge
+        const r = S.el.getBoundingClientRect(), dir = S.el.classList.contains("split-a") ? -1 : 1;
+        go(S.el, [{ transform: `translateX(${dir * r.width}px)`, opacity: .35 }, { transform: "none", opacity: 1 }]);
+      }
+    }
+    if (wasOn && !sp.on) for (const [S, b] of before) {  // leaves: it slides out the way it came, then hides
+      if (now.includes(S) || !state.open.has(S.sid)) continue;
+      const dir = (b.box.left + b.box.right) / 2 < (c0.left + c0.right) / 2 ? -1 : 1;
+      Object.assign(S.el.style, { left: b.box.left - c0.left + "px", right: c0.right - b.box.right + "px", paddingTop: b.pad, zIndex: 2 });
+      Object.assign(S.inner.style, { paddingLeft: b.ipl, paddingRight: b.ipr });
+      S.el.classList.add("split-leave");
+      S.el.scrollTop = b.top;
+      go(S.el, [{ transform: "none", opacity: 1 }, { transform: `translateX(${dir * b.box.width}px)`, opacity: .35 }], { duration: 360 }, () => {
+        S.el.classList.remove("split-leave");
+        ["left", "right", "paddingTop", "zIndex"].forEach(k => S.el.style[k] = "");
+        S.inner.style.paddingLeft = S.inner.style.paddingRight = "";
+      });
+    }
+    if (k0 && cbox()) {  // the message box glides under the chat in front; growing, it opens up from its old edges
+      const k1 = cbox().getBoundingClientRect(), r = getComputedStyle(cbox()).borderRadius;
+      if (k1.width <= k0.width + 1) {
+        const dx = (k0.left + k0.right) / 2 - (k1.left + k1.right) / 2;
+        if (Math.abs(dx) > 1) go(comp, [{ transform: `translateX(${dx}px)` }, { transform: "none" }]);
+      } else {
+        go(cbox(), [{ transform: `translateX(${k0.left - k1.left}px)`, clipPath: `inset(0 ${k1.width - k0.width}px 0 0 round ${r})` },
+                    { transform: "none", clipPath: `inset(0 0 0 0 round ${r})` }]);
+      }
+    }
+    if (!wasOn && sp.on) {  // names, the line between and the quiet box fade in once the sides are moving
+      document.querySelectorAll(".split-head, .split-grip, #split-stub").forEach(n => !n.hidden &&
+        go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 160, fill: "backwards", easing: "ease-out" }));
+    }
+  }
+
   const split = {
     isOn: () => sp.on,
+    moving: () => moving,
+    morph,
     has: sid => sp.on && sp.sides.includes(sid),
     toggle() {
       if (sp.on) return split.off();
       const cur = state.open.get(state.active);
       const other = [...state.open.values()].filter(S => S !== cur).sort((a, b) => b.lastActive - a.lastActive)[0];
       if (!cur || !other) return toast("Open a second chat first, then split.");
-      sp.sides = [cur.sid, other.sid]; sp.on = true; split.layout();
+      morph(() => { sp.sides = [cur.sid, other.sid]; sp.on = true; split.layout(); });
     },
     async beside(s) {  // from a chat's menu: it opens on the right of the chat in front
       const cur = state.active;
       if (!cur || cur === s.id) return;
       if (document.body.classList.contains("mini")) setMini(false);
-      sp.on = false; split.layout();
-      await openSession(s.id, s.cwd, s.title);
-      if (!state.open.has(cur) || !state.open.has(s.id)) return;
-      sp.sides = [cur, s.id]; sp.on = true; split.layout();
+      if (sp.on) morph(() => { sp.on = false; for (const S of state.open.values()) S.el.hidden = S.sid !== cur; split.layout(); });
+      await openSession(s.id, s.cwd, s.title, true);  // loads behind the chat you're in, so nothing flashes
+      if (!state.open.has(cur) || !state.open.has(s.id) || state.active !== cur) return;
+      morph(() => { sp.sides = [cur, s.id]; sp.on = true; activate(s.id); });
     },
-    off() {
+    off(quiet) {  // quiet: no motion (the mini window has its own)
       if (!sp.on) return;
-      sp.on = false;
-      for (const S of state.open.values()) S.el.hidden = S.sid !== state.active;
-      split.layout();
+      const f = () => {
+        sp.on = false;
+        for (const S of state.open.values()) S.el.hidden = S.sid !== state.active;
+        split.layout();
+      };
+      if (quiet) { moving = true; try { f(); } finally { moving = false; } } else morph(f);
     },
     drop(sid) { if (split.has(sid)) { sp.on = false; split.layout(); } },
     onActivate(sid, prev) {
@@ -218,7 +299,7 @@ const Extras = (() => {
       h.hidden = true;
       h.onclick = e => {
         const i = k === "a" ? 0 : 1, id = sp.sides[i], other = sp.sides[1 - i];
-        if (e.target.closest("button")) { split.off(); if (state.open.has(other)) activate(other); return; }
+        if (e.target.closest("button")) { morph(() => { split.off(); if (state.open.has(other)) activate(other); }); return; }
         if (id !== state.active) activate(id, true);
       };
       chats.appendChild(h);

@@ -1354,3 +1354,12 @@ body.split-drag { cursor: col-resize; -webkit-user-select: none; user-select: no
 .vw-pick input:focus { border-color: var(--accent-line); }
 body.mini #split-btn, body.mini #waiting-row { display: none; }
 #side.waiting .sess.on { background: none; }
+
+/* ---------- drag pinned chats to reorder; split view motion ---------- */
+.side-block.pinned .sess.shift { transition: transform .2s var(--soft), background .15s; }
+.sess.lifted { z-index: 6; background: var(--pop-bg) !important; box-shadow: var(--shadow-pop), 0 0 0 1px var(--pane-line); transition: box-shadow .15s, background .15s;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.sess.lifted.settle { transition: transform .19s var(--soft), box-shadow .19s; box-shadow: 0 0 0 1px transparent; }
+body.pin-dragging, body.pin-dragging * { cursor: grabbing !important; -webkit-user-select: none !important; user-select: none !important; }
+body.pin-dragging .sess .acts { display: none !important; }
+.chat.split-leave[hidden] { display: block !important; pointer-events: none; }
