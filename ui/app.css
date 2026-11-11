@@ -304,6 +304,7 @@ body:not(.dark) .seg .thumb { background: #fff; }
 .chat { position: absolute; inset: 0; overflow-y: auto; padding: 14px 0 0;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - var(--dock-h, 120px) - 10px), transparent calc(100% - var(--dock-h, 120px) + 40px)); }
 .chat-inner { max-width: var(--read); margin: 0 auto; padding: 0 32px calc(var(--dock-h, 120px) + 36px); display: flex; flex-direction: column; gap: 12px; }
+.chat-inner > .part { display: flex; flex-direction: column; gap: 12px; }  /* an earlier part of the chat lays out like the chat, so your messages stay on the right */
 #chats.switching .chat-inner { animation: fade-in .3s var(--soft); }
 .empty { position: absolute; inset: 62px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
 .empty h1 { font-size: var(--fs-title); font-weight: 600; margin: 0; color: var(--text); }
