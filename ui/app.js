@@ -4060,9 +4060,11 @@ function renderUpdRow() {  // Settings › Updates: this copy's version and the 
     : `${esc(c.installed)} · Up to date`;
   $("#cc-go")?.addEventListener("click", e => runClaudeUpdate(e.target));
 }
+// One chat in the list a restart reopens. A question you hadn't seen yet comes back under Waiting on you, with its real time.
+window.reopenEntry = S => ({ sid: S.sid, cwd: S.cwd, title: S.title || "", ...(S.ask && !S.ask.old && !S.ask.seen ? { ask_at: S.ask.at } : {}) });
 function stopWaiting() { upd.waiting = false; clearTimeout(upd.timer); checkUpdate(); }
 async function runUpdate() {
-  const chats = [...state.open.values()].filter(S => S.status !== "new").map(S => ({ sid: S.sid, cwd: S.cwd, title: S.title || "" }));
+  const chats = [...state.open.values()].filter(S => S.status !== "new").map(window.reopenEntry);
   const r = await api().update_now(chats, state.active || "");
   if (r.busy) {  // try again until every chat is done
     upd.waiting = true; checkUpdate();
@@ -4075,7 +4077,7 @@ async function runUpdate() {
 }
 async function reopenAfterUpdate() {
   const r = await api().take_reopen();
-  for (const c of r.chats || []) { await openSession(c.sid, c.cwd, c.title).catch(() => {}); const S = state.open.get(c.sid); if (S?.ask) { S.ask.old = false; S.ask.seen = false; } }
+  for (const c of r.chats || []) { await openSession(c.sid, c.cwd, c.title).catch(() => {}); const S = state.open.get(c.sid); if (S?.ask && c.ask_at) { S.ask.old = false; S.ask.seen = false; S.ask.at = c.ask_at; } }
   if (r.active && state.open.has(r.active)) activate(r.active);
   if (r.chats?.length) renderSidebar();
 }

@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-11 · Waiting on you after a restart
+- After a restart, only questions you hadn't seen come back under Waiting on you, with their real time.
+- A reply counts as a question only when it asks you something, not when it just ends with a "?".
+
 ## 2026-11-11 · Change log
 - This change log. The update box lists what's new before you update.
 - Settings › Updates › Change log shows every update, with anything not installed yet at the top.

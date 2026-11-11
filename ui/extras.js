@@ -41,12 +41,17 @@ const Extras = (() => {
   // The line is hidden (markdown.js) and its answers become buttons under the reply; your next message removes them.
   const ANS_RE = /<answers>([\s\S]*?)<\/answers>\s*$/;
   const plain = t => (t || "").replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
+  function toYou(q) {  // the last sentence (after its last colon) speaks to you: "Should I push?", "Which do you want?"
+    const last = q.split(/(?<=[.!])\s+/).pop().split(/:\s+/).pop();
+    return /\b(you|your|I|me|we|us|let's|shall|should)\b/i.test(last);
+  }
   function parseAsk(src) {
     src = (src || "").trimEnd();
     const m = ANS_RE.exec(src);
     const answers = m ? m[1].split("|").map(x => x.trim()).filter(Boolean).slice(0, 6) : [];
     let q = plain(window.stripAnswers(src).trimEnd().split(/\n\s*\n/).pop());
     if (!answers.length && !/\?["”')\]]*$/.test(q)) return null;
+    if (!answers.length && !toYou(q)) return null;  // e.g. "…and the open question: can X do Y?" describes a question, doesn't ask you
     if (q.length > 280) q = "…" + q.slice(-280);
     return { q, answers, at: Date.now() };
   }
@@ -503,7 +508,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
       const hold = yourHolds();
       if (hold.length) { rs.waiting = true; rs.chats = hold; again(); return sync(); }
     }
-    const chats = [...state.open.values()].filter(S => S.status !== "new").map(S => ({ sid: S.sid, cwd: S.cwd, title: S.title || "" }));
+    const chats = [...state.open.values()].filter(S => S.status !== "new").map(window.reopenEntry);
     const r = await (rs.mode === "update" ? api().update_now(chats, state.active || "") : api().restart_now(chats, state.active || "", !!force, rs.auto && !force))
       .catch(e => ({ error: String(e) }));
     if (r.busy) { rs.waiting = true; rs.chats = r.chats || []; clearTimeout(rs.timer); rs.timer = setTimeout(() => rs.waiting && runRestart(false), 3000); return sync(); }
