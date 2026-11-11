@@ -30,6 +30,7 @@ import engine
 import gateway
 import history
 import notes
+import panel
 import recall
 import slim
 import repos
@@ -85,6 +86,12 @@ DEFAULTS = {
     "auto_send_dictation": False,
     "mark_linger": 30,
     "notify": True,
+    "waiting_panel": True,    # Waiting on you floats over other apps while Tether is in the Dock or behind (panel.py)
+    "panel_where": "tr",      # tr | tl | br | bl | dock | drag (where you last dragged it: panel_xy)
+    "panel_xy": [],           # fractions across and down the screen's free area, after a drag
+    "panel_start": "panel",   # panel | folded: how it shows up when something new comes in
+    "panel_kinds": ["ask", "perm", "handoff", "job"],  # ask (questions) perm (approvals) handoff job (failed) done (finished)
+    "panel_private": False,   # only chat names show until you hover the panel
     "history_days": 45,
     "claude_path": "",
     "pinned": [],
@@ -218,6 +225,19 @@ class Api:
         if not focused and s:
             text = re.sub(r"\s*<answers>.*?(</answers>|$)\s*$", "", text or "", flags=re.S)  # the answer-buttons line isn't for reading
             notifier.post(sid, s.title or APP_NAME, text)
+
+    def panel_items(self, items):
+        """The page's Waiting on you list, for the floating panel (panel.py) to show while Tether is away."""
+        panel.set_items(items if isinstance(items, list) else [])
+        return True
+
+    def _panel_act(self, iid: str, act: str, text: str, sid: str) -> None:
+        """A button in the floating panel. Open chat and Edit bring Tether forward; the rest the page does in place."""
+        if act in ("open", "edit"):
+            self._notice_clicked(sid)
+            if act == "open":
+                return
+        self._emit({"type": "panel_act", "id": iid, "act": act, "text": text or ""})
 
     def _notice_clicked(self, sid: str) -> None:
         """You clicked a notification: bring Tether forward on that chat (its newest part, if it started fresh since)."""
@@ -2115,6 +2135,7 @@ class Api:
         if self.settings["notify"] and not notifier.asked():  # switched on now: macOS asks for permission once
             AppHelper.callAfter(notifier.setup, self._notice_clicked)
         self._dictation.warm(self.settings["whisper_model"])
+        panel.refresh()
         return self.settings
 
     def _save(self) -> None:
@@ -2483,6 +2504,7 @@ def main() -> int:
         from PyObjCTools import AppHelper
         AppHelper.callAfter(api._bind_keys)
         AppHelper.callAfter(glass_window, window)
+        AppHelper.callAfter(panel.setup, api)
         if api.settings["notify"]:
             AppHelper.callAfter(notifier.setup, api._notice_clicked)
         api._dictation.warm(api.settings["whisper_model"])

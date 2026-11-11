@@ -511,8 +511,8 @@ table.data tr:hover td { background: var(--hover); }
 /* one line at any width: the model chip gives up room (its label ends in …), Send and the tool buttons never move */
 .compose-tools > * { flex: none; }
 .compose-tools > .spacer { flex: 1 1 0; min-width: 4px; }
-.compose-tools > #run-wrap { flex: 0 1 auto; min-width: 64px; }
-.compose-tools .run-chip { max-width: min(300px, 100%); }
+.compose-tools > #run-wrap { flex: 0 1 auto; min-width: 64px; max-width: 340px; margin-right: 4px; }  /* the cap is on the wrap, so no gap opens before Send */
+.compose-tools .run-chip { max-width: 100%; }
 .tool-btn { width: 32px; height: 30px; border-radius: 9px; border: 0; background: none; cursor: pointer; display: grid; place-items: center; position: relative; transition: background .2s, transform .35s var(--spring); }
 .tool-btn:active { transform: scale(.9); }
 .tool-btn:hover { background: var(--hover); }
@@ -682,7 +682,9 @@ details.advanced[open] > summary::before { transform: rotate(90deg); }
 #run-wrap { position: relative; }
 .run-chip { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 9px 0 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--field);
   color: var(--text-2); font-size: var(--fs-meta); font-weight: 500; cursor: pointer; white-space: nowrap; max-width: 300px; transition: background .2s, transform .35s var(--spring); }
-.run-chip .lbl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.run-chip .lbl { display: flex; min-width: 0; white-space: nowrap; }
+.run-chip .lbl .m { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.run-chip .lbl .rest { flex: none; white-space: pre; }
 .run-chip:hover { background: var(--sel); color: var(--text); }
 .run-chip:active { transform: scale(.96); }
 .run-chip .risky, .run-menu .it.risky .a { color: var(--danger); }
@@ -1423,3 +1425,19 @@ body.pin-dragging .sess .acts { display: none !important; }
 .upd-peek .pk-cc { padding-top: 6px; border-top: 1px solid var(--line); color: var(--text-2); }
 .upd-peek .upd-list { margin: 0; padding-left: 18px; font-size: var(--fs-meta); color: var(--text-2); }
 @media (prefers-reduced-motion: reduce) { .upd-peek { animation: none; } }
+
+/* Settings › Notifications › Where it shows (the floating Waiting on you panel, panel.py) */
+.where-pick { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.wp-scr { position: relative; width: 186px; height: 112px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--sunk); overflow: hidden; display: block; }
+.wp-scr .mb { position: absolute; inset: 0 0 auto 0; height: 7px; background: var(--line-2); }
+.wp-scr .dk { position: absolute; left: 50%; bottom: 5px; width: 92px; height: 10px; margin-left: -46px; border-radius: 4px; background: var(--line-2); }
+.wp-spot { position: absolute; width: 46px; height: 28px; border-radius: 5px; border: 1px dashed var(--line-2); background: transparent; padding: 0; cursor: pointer; transition: background .2s, border-color .2s; }
+.wp-spot:hover { border-color: var(--accent); }
+.wp-spot.on, .wp-spot.drag { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.wp-spot.tl { left: 6px; top: 12px; } .wp-spot.tr { right: 6px; top: 12px; } .wp-spot.bl { left: 6px; bottom: 21px; } .wp-spot.br { right: 6px; bottom: 21px; }
+.wp-spot.dock { left: 50%; margin-left: -23px; bottom: 21px; }
+.wp-spot.drag { width: 34px; height: 22px; cursor: default; }
+.where-pick .nm { font-size: var(--fs-meta); color: var(--text-2); }
+.pk-kinds { display: grid; grid-template-columns: repeat(2, max-content); gap: 5px 16px; }
+.pk-kinds label { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: var(--fs-ctl); cursor: pointer; }
+.pk-kinds input { accent-color: var(--accent-fill); margin: 0; }

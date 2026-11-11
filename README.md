@@ -33,6 +33,7 @@ The first time you use each of these, macOS asks for permission (System Settings
 - **Microphone:** dictation. Speech is turned into text on your Mac with Whisper; the speech model (about 150 MB) downloads the first time.
 - **Screen Recording:** circling things on screen, Claude looking at your screen, and glass that adjusts to what's behind it.
 - **Notifications:** when a chat finishes or needs you while Tether is in the background. They show Tether's logo, and clicking one opens that chat. Keep Tether.app in your Applications folder (the build puts it in `~/Applications`), or macOS refuses them. Turn them off in Settings.
+- **Waiting on you panel:** while Tether is in the Dock, hidden or behind another app, what needs you (questions, approvals, handoffs, failed jobs) floats over the app you're in. Answer, Run or Deny, Send a handoff, or type a reply without bringing Tether forward; after you send, the keyboard goes back to your app. Settings › Notifications sets where it shows (a corner, by the Dock, or wherever you drag it), whether it starts folded, what it shows, and Hide details for screen sharing.
 
 ## Cost and privacy
 
@@ -102,7 +103,7 @@ Settings (⌘,) holds the hotkeys, mic, speech model, work words for dictation, 
 - `history.py`: past sessions from ~/.claude/projects · `repos.py`: git, gh and (if you use it) Databricks status and repo discovery
 - `voice.py`: dictation · `screen.py`, `markup.html`: screenshots, marks and reading text on screen · `lift.py`: tables lifted onto the Shelf
 - `recall.py`: the per-session search index and the Haiku lookup · `notes.py`: running notes · `slim.py`: removes old screenshots from transcripts
-- `notifier.py`: Mac notifications · `dock.py`: the Dock icon's pulse while Claude works · `boot/`: starts Tether when Tether.app runs Python as its own program, so macOS shows notifications as Tether's
+- `notifier.py`: Mac notifications · `panel.py` + `ui/panel.html`: the floating Waiting on you panel · `dock.py`: the Dock icon's pulse while Claude works · `boot/`: starts Tether when Tether.app runs Python as its own program, so macOS shows notifications as Tether's
 - `cc_update.py`: compares the installed Claude Code with the newest on npm and runs `claude update`
 - `updater.py`: checks GitHub for a newer Tether (at most every hour), moves this folder to GitHub's version (setting aside any local edits in git) and restarts
 - `wb_mcp.py`: tools for Claude (look_at_screen, list_windows, mark_up_screen, show_table, show_artifact, recall, session_notes)

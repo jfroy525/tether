@@ -1588,6 +1588,7 @@ function onEvent(ev) {
       break;
     case "fresh_start": freshStart(ev); break;
     case "open_chat": openFromNotice(ev); break;
+    case "panel_act": Extras.panelAct(ev); break;
     case "fresh_prep": if (S) S.freshPrep = !ev.done; break;
     case "fast_unavailable": state.settings.fast_unavailable = ev.reason; if (S && S.sid === state.active) syncModes(S); break;
     case "modes": if (S) { S.modes = ev; S.fast = !!ev.want_fast; if (ev.permission) S.permMode = ev.permission; if (S.sid === state.active) syncModes(S); } break;
@@ -1656,7 +1657,7 @@ function onEvent(ev) {
         S.refused = false;
         if (ev.seconds) bits.push(`${ev.seconds}s`);
         add(S, el("div", "footnote", bits.join(" · ")));
-        if (S.sid !== state.active && !Extras.split.has(S.sid)) S.unseen = true;
+        if ((S.sid !== state.active && !Extras.split.has(S.sid)) || !document.hasFocus()) S.unseen = true;  // in front but Tether is behind: not seen yet
         Extras.turnEnd(S, ev);
         if (S.sid === state.active) { refreshRepo(true); if (state.panel && state.tab === "stats") setTimeout(renderPanel, 1500); }
       }
@@ -2363,7 +2364,9 @@ function syncRun() {
   const model = modelFull($("#model-sel").selectedOptions[0]) || "Default model";
   const eff = $("#effort-sel").value, mode = $("#mode-sel").value;
   const risky = mode === "bypassPermissions";
-  $("#run-btn .lbl").innerHTML = [esc(model.replace(/^Default model$/, "Default")), eff ? esc(EFFORT_SHORT[eff]) : "", `<span class="${risky ? "risky" : ""}">${esc(MODE_SHORT[mode] || mode)}</span>`].filter(Boolean).join(" · ");
+  // only the model name shortens with "…"; effort and mode (a red Bypass) always show
+  $("#run-btn .lbl").innerHTML = `<span class="m">${esc(model.replace(/^Default model$/, "Default"))}</span><span class="rest">${eff ? ` · ${esc(EFFORT_SHORT[eff])}` : ""} · <span class="${risky ? "risky" : ""}">${esc(MODE_SHORT[mode] || mode)}</span></span>`;
+  $("#run-btn").title = `${model} · ${EFFORT_FULL[eff] || "Default"} effort · ${MODE_SHORT[mode] || mode}. Model, effort and permission mode (⇧Tab cycles the mode)`;
   if (!$("#run-menu").hidden) renderRunMenu();
 }
 function renderRunMenu() {
@@ -3659,6 +3662,14 @@ function omLine() {
   const n = (o.models || []).length, t = o.checked_at;
   return `${n} working` + (t ? ` · checked ${new Date(t * 1000).toDateString() === new Date().toDateString() ? "today" : ago(t)}` : "");
 }
+// Settings › Notifications › Where it shows: a little screen; click a spot (or drag the real panel)
+const WHERE_NAME = { tr: "Top right", tl: "Top left", br: "Bottom right", bl: "Bottom left", dock: "By the Dock", drag: "Where you dragged it" };
+function wherePick(s) {
+  const cur = s.panel_where || "tr", xy = s.panel_xy || [];
+  const spots = ["tl", "tr", "bl", "br", "dock"].map(p => `<button type="button" class="wp-spot ${p}${cur === p ? " on" : ""}" data-spot="${p}" title="${WHERE_NAME[p]}"></button>`).join("");
+  const dragged = cur === "drag" && xy.length === 2 ? `<span class="wp-spot drag" style="left:${Math.round(6 + xy[0] * 136)}px;top:${Math.round(12 + xy[1] * 60)}px"></span>` : "";
+  return `<span class="where-pick"><span class="wp-scr"><span class="mb"></span><span class="dk"></span>${spots}${dragged}</span><span class="nm">${WHERE_NAME[cur] || ""}</span><input type="hidden" data-k="panel_where" value="${esc(cur)}"></span>`;
+}
 async function settingsDialog() {
   const { settings: s, hotkeys, mics } = await api().get_settings();
   const mac = await api().permissions().catch(() => ({}));  // a line under a setting when macOS has it switched off
@@ -3701,7 +3712,13 @@ async function settingsDialog() {
       + row("Mark up a window", `<select data-k="markup_key">${keys(s.markup_key || "ctrl+alt+m")}</select>`)
       + row("Keep Claude's marks for", `<select data-k="mark_linger">${opts([["10", "10 seconds"], ["30", "30 seconds"], ["60", "1 minute"], ["300", "5 minutes"], ["0", "Until my next message"]], String(s.mark_linger))}</select>`))}
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
-      + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : ""))}
+      + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : "")
+      + row("Waiting on you panel", sw("waiting_panel", s.waiting_panel !== false), "While Tether is in the Dock or another app is in front, what needs you floats over that app, with buttons to answer from there. It doesn't take the keyboard until you click into it")
+      + row("Where it shows", wherePick(s), "Click a spot. Or drag the panel by its top line, and it stays where you leave it")
+      + row("Shows up as", `<select data-k="panel_start">${opts([["panel", "Panel"], ["folded", "Folded bar"]], s.panel_start || "panel")}</select>`, "Folded bar: a small bar with the count until you click it")
+      + row("Show it for", `<span class="pk-kinds">${[["ask", "Questions"], ["perm", "Approvals"], ["handoff", "Handoffs"], ["job", "Failed jobs"], ["done", "Finished replies"]]
+          .map(([k, l]) => `<label><input type="checkbox" data-kind="${k}" ${(s.panel_kinds || ["ask", "perm", "handoff", "job"]).includes(k) ? "checked" : ""}>${l}</label>`).join("")}</span>`)
+      + row("Hide details", sw("panel_private", !!s.panel_private), "Only chat names show until you hover the panel, for when you share your screen"))}
     ${sec("Updates", row("Version", `<span class="upd-row"><span id="upd-line">Checking…</span><button class="btn ghost small" id="upd-check">Check now</button></span>`, "Tether asks GitHub at most once an hour")
       + row("Change log", `<button class="btn ghost small" id="cl-open">Open</button>`, "What changed in each update, and what an update would bring")
       + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed")
@@ -3751,8 +3768,15 @@ async function settingsDialog() {
   box.querySelector("[data-k=text_size]").onchange = box.querySelector("[data-k=bold_accent]").onchange = previewText;
   box.querySelector("[data-k=chat_width]").onchange = e => applyWidth(e.target.value);
   box.querySelector("[data-close]").addEventListener("click", () => applyTheme(state.settings.theme));
+  box.querySelectorAll("[data-spot]").forEach(b => b.onclick = () => {
+    const w = box.querySelector(".where-pick");
+    w.querySelectorAll(".wp-spot").forEach(x => x.classList.toggle("on", x === b));
+    w.querySelector(".wp-spot.drag")?.remove();
+    w.querySelector("[data-k=panel_where]").value = b.dataset.spot;
+    w.querySelector(".nm").textContent = WHERE_NAME[b.dataset.spot];
+  });
   box.querySelector("[data-save]").onclick = async () => {
-    const out = {};
+    const out = { panel_kinds: [...box.querySelectorAll("[data-kind]:checked")].map(i => i.dataset.kind) };
     box.querySelectorAll("[data-k]").forEach(i => {
       const k = i.dataset.k;
       out[k] = i.type === "checkbox" ? i.checked : ["mark_linger", "history_days", "auto_fresh", "text_size", "chat_width", "transparency", "frost"].includes(k) ? Number(i.value)

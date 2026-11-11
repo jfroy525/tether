@@ -81,7 +81,7 @@ const Extras = (() => {
     if (ev && ev.ok === false) return sync();
     if (S.held?.length) return sync();  // a queued message of yours goes next
     S.ask = parseAsk(src);
-    if (S.ask && (S.sid === state.active || split.has(S.sid))) S.ask.seen = true;  // it came in while you were looking
+    if (S.ask && (S.sid === state.active || split.has(S.sid)) && document.hasFocus()) S.ask.seen = true;  // it came in while you were looking
     drawAnswers(S);
     sync();
   }
@@ -101,8 +101,8 @@ const Extras = (() => {
   // ---------- Waiting on you ----------
   // Every open chat that needs you: an approval, a question at the end of a reply, a reply you haven't seen, a failed job.
   let waitOpen = false, waitKey = "", sent = [];
-  function waitingItems() {  // the chats on screen (the one in front, or both sides of a split) are left out: you can see them
-    const out = [], here = new Set(sp.on ? sp.sides : [state.active]);
+  function waitingItems(all) {  // the chats on screen (the one in front, or both sides of a split) are left out: you can see them
+    const out = [], here = all ? new Set() : new Set(sp.on ? sp.sides : [state.active]);  // all: for the floating panel, shown while Tether is away
     for (const S of state.open.values()) {
       if (here.has(S.sid)) continue;
       for (const h of S.handoffs?.values() || []) out.push({ S, id: "h" + h.id, kind: "Handoff", at: (h.at || 0) * 1000, handoff: h });
@@ -573,6 +573,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     row.querySelector(".c").textContent = n || "";
     row.querySelector(".wt-dot").className = "wt-dot " + (n ? "warn" : "");
     renderWaiting();
+    pushPanel();
     split.layout();
     const line = $("#restart-line"), k = rs.chats.length;
     line.hidden = !rs.waiting;
@@ -583,8 +584,69 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     }
     $("#restart-btn").classList.toggle("wait", rs.waiting);
   }
+  // ---------- the floating panel (panel.py) ----------
+  // While Tether is in the Dock or behind another app, the same list floats over the app you're in, with buttons.
+  // It includes the chat in front, since you aren't looking at it then. Python shows and hides it.
+  const ICON_OPEN = { label: "Open chat", act: "open", primary: true, icon: "open" };
+  function panelList() {
+    for (const S of state.open.values()) if (!S.jobFailed) delete S.jobAt;
+    return waitingItems(true).map(x => {
+      const S = x.S, base = { id: x.id, sid: S.sid, title: S.title || "New session", at: x.at || Date.now() };
+      if (x.ev) {
+        const ev = x.ev;
+        if (ev.kind === "question") return { ...base, kind: "Question", cat: "ask", text: (ev.questions || []).map(z => z.question).join(" · "), buttons: [ICON_OPEN] };
+        if (ev.kind === "plan") return { ...base, kind: "Plan", cat: "perm", text: "A plan is ready for you to review.", buttons: [ICON_OPEN] };
+        const bash = ev.tool === "Bash", first = ((ev.detail || "").split(/\s+/)[0] || "").slice(0, 24), d = ev.detail || "";
+        return { ...base, kind: "Permission", cat: "perm", text: bash ? "Run this command?" : `Allow ${ev.label}?`, detail: d.length > 600 ? d.slice(0, 600) + "…" : d,
+          buttons: [{ label: bash ? "Run" : "Allow", act: "allow", primary: true, icon: "yes" },
+            ...(ev.guarded ? [] : [{ label: bash ? `Always allow “${first}” here` : "Always allow here", act: "always" }]),
+            { label: "Deny", act: "deny", ghost: true, icon: "no" }] };
+      }
+      if (x.handoff) {
+        const h = x.handoff;
+        return { ...base, kind: `Handoff from ${h.from_title}`, cat: "handoff", text: h.text.replace(/\s+/g, " ").slice(0, 320),
+          buttons: [{ label: "Send", act: "send", primary: true, icon: "send" }, { label: "Edit", act: "edit", icon: "pen" }, { label: "Dismiss", act: "dismiss", ghost: true }] };
+      }
+      if (x.ask) return { ...base, kind: "Question", cat: "ask", text: x.ask.q, reply: true,
+        buttons: x.ask.answers.map((a, i) => { const m = /^(\d{1,2}|[A-Z])[.:)]?\s+(.+)$/.exec(a); return { label: m ? m[2] : a, n: m ? m[1] : "", act: "say", text: a, primary: i === 0 }; }) };
+      if (x.kind === "Job failed") return { ...base, at: (S.jobAt ||= Date.now()), kind: "Job failed", cat: "job", text: x.text, buttons: [{ label: "Seen", act: "seen" }] };
+      return { ...base, kind: "Finished", cat: "done", text: x.text, buttons: [{ label: "Seen", act: "seen" }] };
+    });
+  }
+  let panelSent = "";
+  function pushPanel() {
+    if (!ready) return;
+    const list = panelList(), key = JSON.stringify(list);
+    if (key === panelSent) return;
+    panelSent = key;
+    api().panel_items?.(list)?.catch?.(() => { panelSent = ""; });
+  }
+  function panelAct(ev) {  // a button in the floating panel (Open chat is done by Python)
+    const x = waitingItems(true).find(i => i.id === ev.id);
+    if (!x) return;
+    const S = x.S;
+    if (["allow", "always", "deny"].includes(ev.act) && x.rid) answer(S, x.rid, ev.act);
+    else if (ev.act === "say" && ev.text) quickSend(S, ev.text);
+    else if (ev.act === "send" && x.handoff) sendHandoff(S, x.handoff);
+    else if (ev.act === "dismiss" && x.handoff) doneHandoff(S, x.handoff, "Dismissed");
+    else if (ev.act === "edit" && x.handoff) editHandoff(S, x.handoff);
+    else if (ev.act === "seen") { if (x.kind === "Job failed") S.jobFailed = false; else S.unseen = false; }
+    sync();
+  }
+  function backInFront() {  // you came back to Tether: what's on screen counts as seen
+    for (const sid of sp.on ? sp.sides : [state.active]) {
+      const S = state.open.get(sid);
+      if (!S) continue;
+      S.unseen = false;
+      if (S.ask) S.ask.seen = true;
+    }
+    sync();
+  }
+
   function init() {
     ready = true;
+    addEventListener("focus", backInFront);
+    setInterval(pushPanel, 2000);  // approvals and job ends don't all pass through sync()
     wireSplit();
     $("#waiting-row").onclick = () => waitOpen ? closeWaiting() : openWaiting();
     $("#restart-line .lnk-btn").onclick = cancelRestart;
@@ -597,5 +659,5 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     sync();
   }
 
-  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog };
+  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog, panelAct };
 })();
