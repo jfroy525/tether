@@ -286,10 +286,16 @@ body:not(.dark) .seg .thumb { background: #fff; }
 .thread-title:hover { background: var(--hover); }
 .thread-title-edit { font-size: var(--fs-h); font-weight: 600; height: 28px; width: 40%; border: 1px solid var(--accent-line); border-radius: var(--r-1);
   background: var(--surface); padding: 0 6px; outline: none; }
-.crumbs { display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; gap: 0; min-width: 0; max-width: 100%; flex: 0 1 auto; overflow: hidden; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }
+.crumbs { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; min-width: 0; max-width: 100%; flex: 0 1 auto; overflow: hidden; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }  /* one line: the bar is a fixed height */
 .crumbs > span + span::before { content: "·"; margin: 0 6px; color: var(--text-3); }
 .crumbs > span + span:is(.ok, .warn, .bad, .info) { margin-left: 10px; }  /* a state dot stands in for the separator */
-.crumbs > span { display: inline-flex; align-items: center; gap: 6px; }
+/* One line, so when room runs out each part ends in … in this order: the branch first, then the repo name, the pull
+   request last; changed files and unpushed commits keep their full words. Hover any part for all of it. */
+.crumbs > span { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-width: 0; overflow: hidden; }
+.crumbs > span .tx { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.crumbs > span.shrink { flex-shrink: 0; }  /* shown in full or not at all (fitCrumbs) */
+.crumbs > span.name { flex-shrink: 300; min-width: 3.5em; }
+.crumbs > span.pr { flex-shrink: 1; min-width: 7em; }
 .crumbs .click { cursor: pointer; } .crumbs .click:hover { color: var(--text); }
 .crumbs .mono { font-size: var(--fs-meta); }
 .crumbs .ok::before, .crumbs .warn::before, .crumbs .bad::before, .crumbs .info::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
@@ -1428,14 +1434,22 @@ body.pin-dragging .sess .acts { display: none !important; }
 
 /* Settings › Notifications › Where it shows (the floating Waiting on you panel, panel.py) */
 .where-pick { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
-.wp-scr { position: relative; width: 186px; height: 112px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--sunk); overflow: hidden; display: block; }
+.wp-scr { position: relative; width: 204px; height: 112px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--sunk); overflow: hidden; display: block; }
 .wp-scr .mb { position: absolute; inset: 0 0 auto 0; height: 7px; background: var(--line-2); }
 .wp-scr .dk { position: absolute; left: 50%; bottom: 5px; width: 92px; height: 10px; margin-left: -46px; border-radius: 4px; background: var(--line-2); }
-.wp-spot { position: absolute; width: 46px; height: 28px; border-radius: 5px; border: 1px dashed var(--line-2); background: transparent; padding: 0; cursor: pointer; transition: background .2s, border-color .2s; }
+.wp-spot { position: absolute; width: 44px; height: 24px; border-radius: 5px; border: 1px dashed var(--line-2); background: transparent; padding: 0; cursor: pointer; transition: background .2s, border-color .2s; }
 .wp-spot:hover { border-color: var(--accent); }
 .wp-spot.on, .wp-spot.drag { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); }
 .wp-spot.tl { left: 6px; top: 12px; } .wp-spot.tr { right: 6px; top: 12px; } .wp-spot.bl { left: 6px; bottom: 21px; } .wp-spot.br { right: 6px; bottom: 21px; }
-.wp-spot.dock { left: 50%; margin-left: -23px; bottom: 21px; }
+.wp-spot.bc { left: 50%; margin-left: -22px; bottom: 21px; }
+/* the Dock on a side: drawn there, corners step in from it, and "By the Dock" sits halfway up beside it */
+.wp-scr.side-left .dk, .wp-scr.side-right .dk { bottom: auto; top: 50%; width: 10px; height: 64px; margin: -28px 0 0; left: 5px; }
+.wp-scr.side-right .dk { left: auto; right: 5px; }
+.wp-scr:not(.side-bottom) .wp-spot.bl, .wp-scr:not(.side-bottom) .wp-spot.br, .wp-scr:not(.side-bottom) .wp-spot.bc { bottom: 8px; }
+.wp-scr.side-left .wp-spot.tl, .wp-scr.side-left .wp-spot.bl { left: 21px; }
+.wp-scr.side-right .wp-spot.tr, .wp-scr.side-right .wp-spot.br { right: 21px; }
+.wp-spot.dock { top: 50%; margin-top: -8px; }
+.wp-scr.side-left .wp-spot.dock { left: 21px; } .wp-scr.side-right .wp-spot.dock { right: 21px; }
 .wp-spot.drag { width: 34px; height: 22px; cursor: default; }
 .where-pick .nm { font-size: var(--fs-meta); color: var(--text-2); }
 .pk-kinds { display: grid; grid-template-columns: repeat(2, max-content); gap: 5px 16px; }

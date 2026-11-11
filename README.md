@@ -33,7 +33,7 @@ The first time you use each of these, macOS asks for permission (System Settings
 - **Microphone:** dictation. Speech is turned into text on your Mac with Whisper; the speech model (about 150 MB) downloads the first time.
 - **Screen Recording:** circling things on screen, Claude looking at your screen, and glass that adjusts to what's behind it.
 - **Notifications:** when a chat finishes or needs you while Tether is in the background. They show Tether's logo, and clicking one opens that chat. Keep Tether.app in your Applications folder (the build puts it in `~/Applications`), or macOS refuses them. Turn them off in Settings.
-- **Waiting on you panel:** while Tether is in the Dock, hidden or behind another app, what needs you (questions, approvals, handoffs, failed jobs) floats over the app you're in. Answer, Run or Deny, Send a handoff, or type a reply without bringing Tether forward; after you send, the keyboard goes back to your app. Settings › Notifications sets where it shows (a corner, by the Dock, or wherever you drag it), whether it starts folded, what it shows, and Hide details for screen sharing.
+- **Waiting on you panel:** while Tether is in the Dock, hidden or behind another app, what needs you (questions, approvals, handoffs, failed jobs) floats over the app you're in. Answer, Run or Deny, Send a handoff, or type a reply without bringing Tether forward; after you send, the keyboard goes back to your app. Settings › Notifications sets where it shows (a corner, bottom center, next to the Dock on whichever side it sits, or wherever you drag it), whether it starts folded, what it shows, and Hide details for screen sharing.
 
 ## Cost and privacy
 

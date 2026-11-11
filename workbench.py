@@ -87,7 +87,7 @@ DEFAULTS = {
     "mark_linger": 30,
     "notify": True,
     "waiting_panel": True,    # Waiting on you floats over other apps while Tether is in the Dock or behind (panel.py)
-    "panel_where": "tr",      # tr | tl | br | bl | dock | drag (where you last dragged it: panel_xy)
+    "panel_where": "tr",      # tr | tl | br | bl | bc | dock | drag (where you last dragged it: panel_xy)
     "panel_xy": [],           # fractions across and down the screen's free area, after a drag
     "panel_start": "panel",   # panel | folded: how it shows up when something new comes in
     "panel_kinds": ["ask", "perm", "handoff", "job"],  # ask (questions) perm (approvals) handoff job (failed) done (finished)
@@ -225,6 +225,10 @@ class Api:
         if not focused and s:
             text = re.sub(r"\s*<answers>.*?(</answers>|$)\s*$", "", text or "", flags=re.S)  # the answer-buttons line isn't for reading
             notifier.post(sid, s.title or APP_NAME, text)
+
+    def dock_side(self):
+        """left, right or bottom: for Settings › Notifications › Where it shows."""
+        return panel.dock_side()
 
     def panel_items(self, items):
         """The page's Waiting on you list, for the floating panel (panel.py) to show while Tether is away."""

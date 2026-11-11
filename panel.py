@@ -172,6 +172,17 @@ def _make() -> None:
     _ = objc  # keep the import: pyobjc needs it loaded for the subclasses above
 
 
+def dock_side() -> str:
+    """Where the Dock sits: left, right or bottom (its own setting, so it's right even on another display or hidden)."""
+    try:
+        from Foundation import NSUserDefaults
+        d = NSUserDefaults.standardUserDefaults().persistentDomainForName_("com.apple.dock") or {}
+        side = str(d.get("orientation") or "bottom")
+        return side if side in ("left", "right", "bottom") else "bottom"
+    except Exception:  # noqa: BLE001
+        return "bottom"
+
+
 def _screen():
     import AppKit
     return AppKit.NSScreen.mainScreen() or AppKit.NSScreen.screens()[0]
@@ -181,7 +192,7 @@ def _frame(h: float):
     """Where the window goes for Settings › Notifications › Where it shows, at height h."""
     import AppKit
     sc = _screen()
-    vf, full = sc.visibleFrame(), sc.frame()
+    vf = sc.visibleFrame()
     x0, y0, vw, vh = vf.origin.x, vf.origin.y, vf.size.width, vf.size.height
     where = _api.settings.get("panel_where") or "tr"
     xy = _api.settings.get("panel_xy") or []
@@ -189,12 +200,10 @@ def _frame(h: float):
     if where == "drag" and len(xy) == 2:
         x = x0 - M + float(xy[0]) * max(1, vw - PANEL_W)
         y = y0 + vh + M - float(xy[1]) * vh - h
-    elif where == "dock":
-        dl, dr = x0 - full.origin.x, (full.origin.x + full.size.width) - (x0 + vw)
-        if dl > 0 or dr > 0:  # Dock on a side: next to it, halfway up
-            x, y = (left if dl > 0 else right), y0 + (vh - h) / 2
-        else:
-            x, y = x0 + (vw - W) / 2, bottom
+    elif where == "dock" and dock_side() in ("left", "right"):  # next to the Dock, halfway up
+        x, y = (left if dock_side() == "left" else right), y0 + (vh - h) / 2
+    elif where in ("bc", "dock"):  # bottom center (by the Dock, when it's at the bottom)
+        x, y = x0 + (vw - W) / 2, bottom
     else:
         x = left if where in ("tl", "bl") else right
         y = bottom if where in ("bl", "br") else top

@@ -2923,7 +2923,7 @@ function renderBar() {
   left.appendChild(title);
   const crumbs = el("div", "crumbs");
   const add = (text, cls, tip, onclick) => {
-    const c = el("span", cls || "", esc(text));
+    const c = el("span", cls || "", `<span class="tx">${esc(text)}</span>`);  // .tx: the words end in … when room runs out
     if (tip) c.title = tip;
     if (onclick) { c.classList.add("click"); c.onclick = onclick; }
     crumbs.appendChild(c);
@@ -2932,12 +2932,14 @@ function renderBar() {
   const many = (S.repos || []).length > 1;
   const where = add(st && st.git ? st.name + (many ? " ▾" : "") : home ? "Home" : basename(S.cwd), "",
     st && st.git ? tilde(st.root) + (many ? " · Switch repo" : "") : tilde(S.cwd), many ? e => { e.stopPropagation(); repoMenu(S, where); } : null);
+  where.classList.add("name");
   if (st && st.git) {
     // Only what needs you: main and no changes say nothing
     const host = hostName(st.remote);
     const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+    if (st.branch && !["main", "master"].includes(st.branch)) where.title += ` · on branch ${st.branch}`;
     if (st.branch && !["main", "master"].includes(st.branch))
-      add(`On branch ${st.branch}`, "", st.upstream ? `Linked to ${st.upstream}` : `Not on ${host} yet`);
+      add(`On branch ${st.branch}`, "shrink", `${st.branch} · ${st.upstream ? `linked to ${st.upstream}` : `not on ${host} yet`}`);  // a long name gives way first
     if (st.ahead) add(`${plural(st.ahead, "commit")} not on ${host}`, "", "Push to send them");
     if (st.behind) add(`${plural(st.behind, "new commit")} on ${host}`, "warn", "Pull to get them");
     const n = st.files.length;
@@ -2947,13 +2949,24 @@ function renderBar() {
       const c = pr.checks;
       const done = pr.state === "MERGED" || pr.state === "CLOSED";
       const cls = done ? "" : c.failed ? "bad" : c.pending ? "warn" : c.total ? "ok" : "";
-      add(`Pull request #${pr.number}${done ? " " + pr.state.toLowerCase() : pr.draft ? " draft" : ""}${!done && c.total ? (c.failed ? ` · ${c.failed} failing` : c.pending ? ` · ${c.pending} running` : " · checks pass") : ""}`, cls,
+      add(`Pull request #${pr.number}${done ? " " + pr.state.toLowerCase() : pr.draft ? " draft" : ""}${!done && c.total ? (c.failed ? ` · ${c.failed} failing` : c.pending ? ` · ${c.pending} running` : " · checks pass") : ""}`, (cls + " pr").trim(),
         `${pr.title} → ${pr.base}${pr.review ? " · " + pr.review.toLowerCase().replace(/_/g, " ") : ""}`, () => api().open_url(pr.url));
     }
   }
-  if (st && st.databricks) add(`Databricks ${st.databricks.label || st.databricks.profile}`, "", `${st.databricks.profile || ""} ${st.databricks.host || ""}`.trim());
+  if (st && st.databricks) add(`Databricks ${st.databricks.label || st.databricks.profile}`, "shrink", `${st.databricks.profile || ""} ${st.databricks.host || ""}`.trim());
   left.appendChild(crumbs);
+  requestAnimationFrame(fitCrumbs);
 }
+// The line under the title is one row. A branch (or Databricks) name that doesn't fit in full hides instead of
+// ending in "…", which tells you nothing; the repo name's hover text has it.
+function fitCrumbs() {
+  const c = $("#bar .crumbs");
+  if (!c) return;
+  const parts = [...c.querySelectorAll(":scope > .shrink")];
+  parts.forEach(p => { p.style.display = ""; });
+  for (const p of parts.reverse()) if (p.scrollWidth > p.clientWidth + 1 || c.scrollWidth > c.clientWidth + 1) p.style.display = "none";
+}
+addEventListener("resize", () => requestAnimationFrame(fitCrumbs));
 // Mini window (⌘⇧M): one chat in a corner, above other apps. mini.py glides the window there; the sidebar and panel
 // fold here on the same smooth curve (springCurve), so both land together.
 const MINI_ICONS = {
@@ -3663,16 +3676,21 @@ function omLine() {
   return `${n} working` + (t ? ` · checked ${new Date(t * 1000).toDateString() === new Date().toDateString() ? "today" : ago(t)}` : "");
 }
 // Settings › Notifications › Where it shows: a little screen; click a spot (or drag the real panel)
-const WHERE_NAME = { tr: "Top right", tl: "Top left", br: "Bottom right", bl: "Bottom left", dock: "By the Dock", drag: "Where you dragged it" };
-function wherePick(s) {
-  const cur = s.panel_where || "tr", xy = s.panel_xy || [];
-  const spots = ["tl", "tr", "bl", "br", "dock"].map(p => `<button type="button" class="wp-spot ${p}${cur === p ? " on" : ""}" data-spot="${p}" title="${WHERE_NAME[p]}"></button>`).join("");
-  const dragged = cur === "drag" && xy.length === 2 ? `<span class="wp-spot drag" style="left:${Math.round(6 + xy[0] * 136)}px;top:${Math.round(12 + xy[1] * 60)}px"></span>` : "";
-  return `<span class="where-pick"><span class="wp-scr"><span class="mb"></span><span class="dk"></span>${spots}${dragged}</span><span class="nm">${WHERE_NAME[cur] || ""}</span><input type="hidden" data-k="panel_where" value="${esc(cur)}"></span>`;
+// The Dock is drawn on the side it really is (api.dock_side); "By the Dock" is its own spot only when that's a side.
+const WHERE_NAME = { tr: "Top right", tl: "Top left", br: "Bottom right", bl: "Bottom left", bc: "Bottom center", dock: "By the Dock", drag: "Where you dragged it" };
+function wherePick(s, side = "bottom") {
+  let cur = s.panel_where || "tr";
+  if (cur === "dock" && side === "bottom") cur = "bc";  // the same spot when the Dock is at the bottom
+  const xy = s.panel_xy || [], names = { ...WHERE_NAME, dock: `By the Dock, on the ${side}` };
+  const spots = ["tl", "tr", "bl", "br", "bc", ...(side === "bottom" ? [] : ["dock"])]
+    .map(p => `<button type="button" class="wp-spot ${p}${cur === p ? " on" : ""}" data-spot="${p}" data-name="${esc(names[p])}" title="${esc(names[p])}"></button>`).join("");
+  const dragged = cur === "drag" && xy.length === 2 ? `<span class="wp-spot drag" style="left:${Math.round(6 + xy[0] * 158)}px;top:${Math.round(12 + xy[1] * 70)}px"></span>` : "";
+  return `<span class="where-pick"><span class="wp-scr side-${side}"><span class="mb"></span><span class="dk"></span>${spots}${dragged}</span><span class="nm">${esc(names[cur] || "")}</span><input type="hidden" data-k="panel_where" value="${esc(cur)}"></span>`;
 }
 async function settingsDialog() {
   const { settings: s, hotkeys, mics } = await api().get_settings();
   const mac = await api().permissions().catch(() => ({}));  // a line under a setting when macOS has it switched off
+  const dockSide = await api().dock_side?.().catch?.(() => "bottom") || "bottom";
   const macOff = (what, pane) => row(`<span class="dim">${what}</span>`, `<button class="btn ghost small" data-mac="${pane}">Open</button>`);
   if (!state.models?.length) state.models = await api().models();  // the model list for new chats
   if (!state.other) state.other = await api().other_models().catch(() => null);
@@ -3714,7 +3732,7 @@ async function settingsDialog() {
     ${sec("Notifications", row("When a session finishes or needs me", sw("notify", s.notify), "Only while Tether is in the background")
       + (s.notify && mac.notify_off ? macOff("Off in System Settings", "notifications") : "")
       + row("Waiting on you panel", sw("waiting_panel", s.waiting_panel !== false), "While Tether is in the Dock or another app is in front, what needs you floats over that app, with buttons to answer from there. It doesn't take the keyboard until you click into it")
-      + row("Where it shows", wherePick(s), "Click a spot. Or drag the panel by its top line, and it stays where you leave it")
+      + row("Where it shows", wherePick(s, dockSide), "Click a spot. Or drag the panel by its top line, and it stays where you leave it")
       + row("Shows up as", `<select data-k="panel_start">${opts([["panel", "Panel"], ["folded", "Folded bar"]], s.panel_start || "panel")}</select>`, "Folded bar: a small bar with the count until you click it")
       + row("Show it for", `<span class="pk-kinds">${[["ask", "Questions"], ["perm", "Approvals"], ["handoff", "Handoffs"], ["job", "Failed jobs"], ["done", "Finished replies"]]
           .map(([k, l]) => `<label><input type="checkbox" data-kind="${k}" ${(s.panel_kinds || ["ask", "perm", "handoff", "job"]).includes(k) ? "checked" : ""}>${l}</label>`).join("")}</span>`)
@@ -3773,7 +3791,7 @@ async function settingsDialog() {
     w.querySelectorAll(".wp-spot").forEach(x => x.classList.toggle("on", x === b));
     w.querySelector(".wp-spot.drag")?.remove();
     w.querySelector("[data-k=panel_where]").value = b.dataset.spot;
-    w.querySelector(".nm").textContent = WHERE_NAME[b.dataset.spot];
+    w.querySelector(".nm").textContent = b.dataset.name;
   });
   box.querySelector("[data-save]").onclick = async () => {
     const out = { panel_kinds: [...box.querySelectorAll("[data-kind]:checked")].map(i => i.dataset.kind) };
@@ -3853,7 +3871,13 @@ function wire() {
   document.addEventListener("mousedown", e => { if (!pk.hidden && !pk.contains(e.target) && !e.target.closest("a.path, .tool .row, img, .att")) closePeek(); });
   // the header and the top of the sidebar are the title bar: drag to move, double-click to zoom
   // (the Shelf's top bar is drawn later, so both listen on the whole page; Python moves the window, across displays)
-  document.addEventListener("mousedown", e => { if (e.button === 0 && e.detail === 1 && e.target.classList?.contains("pywebview-drag-region")) api().drag_window(); });
+  // Drag the window by the top bar, anywhere but its controls (the title renames, the dotted parts click through)
+  document.addEventListener("mousedown", e => {
+    if (e.button !== 0 || e.detail !== 1) return;
+    const t = e.target;
+    const onBar = t.classList?.contains("pywebview-drag-region") || (t.closest?.("#bar") && !t.closest("button, a, input, select, textarea, .seg, .click, .thread-title, .thread-title-edit, .mini-title, [contenteditable]"));
+    if (onBar) api().drag_window();
+  });
   document.addEventListener("dblclick", e => { if (e.target.classList?.contains("pywebview-drag-region")) api().zoom(); });
   // files dragged over the window: a drop zone; the drop itself is handled in Python, which knows the paths
   let dragDepth = 0;

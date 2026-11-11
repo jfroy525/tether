@@ -5,6 +5,11 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-11 · Top bar and the panel by the Dock
+- The line under a chat's title stays on one row: a branch name that doesn't fit hides (hover the repo name for it), and the pull request status keeps its place.
+- Drag the window by any part of the top bar except its controls.
+- Settings › Notifications draws the Dock on the side it really is, adds a Bottom center spot, and By the Dock follows the Dock to the left, right or bottom.
+
 ## 2026-11-11 · Waiting on you, floating over other apps
 - While Tether is in the Dock, hidden or behind another app, what needs you floats over the app you're in: questions, approvals, handoffs and failed jobs.
 - Answer, Run or Deny, and send a handoff right from it, without bringing Tether forward. Type a reply there too; after you send, the keyboard goes back to your app.
