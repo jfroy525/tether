@@ -527,7 +527,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
       const b = el(c.sid ? "button" : "div", "rl-row" + (c.why === "needs your answer" ? " warn" : "") + (c.sid ? "" : " you"), `<span class="nm"></span><span class="why"></span>`);
       b.querySelector(".nm").textContent = (state.open.get(c.sid)?.title) || c.title;
       b.querySelector(".why").textContent = c.why;
-      if (c.sid) b.title = "Go to this chat";
+      b.title = c.sid ? `${b.querySelector(".nm").textContent} · ${c.why}. Go to this chat` : `${b.querySelector(".nm").textContent} · ${c.why}`;
       b.onclick = () => { if (state.open.has(c.sid)) activate(c.sid); };
       box.appendChild(b);
     }
@@ -573,7 +573,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     line.hidden = !rs.waiting;
     if (rs.waiting) {
       const up = rs.mode === "update";
-      line.querySelector(".t").textContent = k ? `${up ? "Updates" : "Restarts"} after ${k === 1 ? "this finishes" : "these finish"}` : up ? "Updating…" : "Restarting…";
+      line.querySelector(".t").textContent = k ? `${up ? "Update" : "Restart"} waits for` : up ? "Updating…" : "Restarting…";  // short: Cancel shares the line
       paintRestartList(line);
     }
     $("#restart-btn").classList.toggle("wait", rs.waiting);
