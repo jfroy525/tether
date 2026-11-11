@@ -3985,7 +3985,9 @@ async function checkUpdate(force = false) {
   const b = $("#update-btn");
   b.hidden = !(upd.info?.behind > 0 || upd.cc?.newer);
   b.classList.toggle("wait", upd.waiting);
-  b.title = b.ariaLabel = upd.waiting ? "Updating when chats finish" : "Update available";
+  b.ariaLabel = upd.waiting ? "Updating when chats finish" : "Update available";
+  b.removeAttribute("title");  // the hover card says what's in it (updPeek)
+  if ($("#upd-peek")) fillPeek($("#upd-peek"));
   Extras.autoCheck("update");
 }
 function ccLine() {  // "Claude Code 2.1.312 → 2.1.318" with its own Update button
@@ -4003,6 +4005,55 @@ async function runClaudeUpdate(btn) {
   else toast(`Couldn't update Claude Code: ${r.why}`, "error");
   if (btn) { btn.disabled = false; btn.textContent = r.ok ? "Updated" : "Try again"; }
   await checkUpdate(true);
+}
+// Hover the update icon: what the update has in it, from the change log (commit titles for older updates)
+const PEEK_MAX = 3;
+function fillPeek(box) {
+  const i = upd.info || {}, notes = i.behind > 0 ? i.notes || [] : [];
+  box.innerHTML = "";
+  if (upd.waiting) box.appendChild(el("div", "pk-top", "Updating when chats finish"));
+  if (notes.length) {
+    const list = el("div", "cl-list");
+    fillLog(list, notes.slice(0, PEEK_MAX));
+    box.appendChild(list);
+    box.appendChild(el("div", "pk-more"));
+    box._hidden = notes.length - Math.min(PEEK_MAX, notes.length);
+    peekMore(box);
+  } else if (i.behind > 0) {
+    const ch = i.changes || [], more = ch.length > 6 ? ch.length - 6 + (i.more || 0) : i.more || 0;
+    box.appendChild(el("div", "pk-top", "Tether update"));
+    const ul = el("ul", "upd-list"); ch.slice(0, 6).forEach(c => ul.appendChild(el("li", "", esc(c)))); box.appendChild(ul);
+    if (more) box.appendChild(el("div", "pk-more", `and ${more} more`));
+  }
+  if (upd.cc?.newer) box.appendChild(el("div", "pk-cc", `Claude Code ${esc(upd.cc.installed)} → ${esc(upd.cc.latest)}`));
+}
+function peekMore(box) { const m = box.querySelector(".pk-more"); if (m) { m.textContent = `and ${box._hidden} more`; m.hidden = !box._hidden; } }
+function trimPeek(box) {  // whole entries that don't fit go into "and N more", instead of being cut mid-line
+  const list = box.querySelector(":scope > .cl-list");
+  while (list && list.childElementCount > 1 && list.scrollHeight > list.clientHeight + 1) { list.lastElementChild.remove(); box._hidden++; peekMore(box); }
+}
+function updPeek() {
+  const b = $("#update-btn");
+  let t = 0;
+  const hide = () => { clearTimeout(t); $("#upd-peek")?.remove(); };
+  b.addEventListener("mouseenter", () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (b.hidden || !$("#modal").hidden) return;  // not over an open dialog
+      hide();
+      const box = el("div", "upd-peek"); box.id = "upd-peek";
+      fillPeek(box);
+      if (!box.childElementCount) return;
+      const r = b.getBoundingClientRect(), side = $("#side").getBoundingClientRect();
+      box.style.left = Math.max(8, side.left) + "px";
+      box.style.bottom = (innerHeight - r.top + 8) + "px";
+      box.style.setProperty("--ox", Math.round(r.left + r.width / 2 - Math.max(8, side.left)) + "px");
+      document.body.appendChild(box);
+      trimPeek(box);
+    }, 250);
+  });
+  b.addEventListener("mouseleave", hide);
+  b.addEventListener("click", hide);
 }
 function updateDialog() {
   const i = upd.info || {};
@@ -4097,6 +4148,7 @@ window.addEventListener("pywebviewready", async () => {
   fillModels();
   reopenAfterUpdate();
   $("#update-btn").onclick = updateDialog;
+  updPeek();
   setTimeout(checkUpdate, 15000);  // GitHub is asked at most every 6 hours; this only reads the answer
   setInterval(checkUpdate, 3600 * 1000);
 });

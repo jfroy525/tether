@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-11 · See what's in an update
+- Hover the update icon to see what the update has in it: the new change log entries, and a Claude Code update if there is one.
+
 ## 2026-11-11 · Your messages stay on the right
 - After a fresh start, your messages from the earlier part of the chat sit on the right again, like the rest.
 
