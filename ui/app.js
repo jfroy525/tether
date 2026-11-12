@@ -2760,11 +2760,18 @@ function editQueued(S, q) {
   const ta = el("textarea", "q-edit");
   ta.value = q.text;
   tn.replaceWith(ta);
-  const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + ta.offsetHeight - ta.clientHeight, 320) + "px"; };  // plus its border
-  fit(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  const show = () => {  // keep the footer (Enter saves, the buttons) above the message box, which floats over the chat
+    const comp = $("#composer");
+    const floor = (comp && !comp.hidden ? comp.getBoundingClientRect().top : S.el.getBoundingClientRect().bottom) - 12;
+    const over = q.el.getBoundingClientRect().bottom - floor;
+    if (over > 0) { S.el.scrollTop += over; S.setTop = S.el.scrollTop; }
+  };
+  const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + ta.offsetHeight - ta.clientHeight, 320) + "px"; show(); };  // plus its border
+  fit(); ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length);
   q.el.classList.add("editing");
   const st = q.el.querySelector(".q-state");
   if (st) st.textContent = "Enter saves · Esc cancels";
+  requestAnimationFrame(show);  // after the editing look is applied
   const done = save => {
     if (!q.editing) return;
     q.editing = false;

@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-12 · Editing a queued message
+- While you edit a queued message, the chat scrolls as the box grows, so Enter saves, Esc cancels and the buttons stay in view above the message box.
+
 ## 2026-11-11 · Top bar and the panel by the Dock
 - The line under a chat's title stays on one row: a branch name that doesn't fit hides (hover the repo name for it), and the pull request status keeps its place.
 - Drag the window by any part of the top bar except its controls.
