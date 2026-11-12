@@ -5,6 +5,11 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-12 · Restarts wait for follow-ups
+- A restart or update waits 30 seconds after a background job or agent ends, so Claude can follow up on it first. An automatic fresh start waits the same way.
+- Restarting or updating from inside Tether stops each chat's Claude first, like ⌘Q, so no chat keeps working where you can't see it.
+- Update on its own when idle restarts for changes to Tether's files only once they're pushed to GitHub, not while they're being edited.
+
 ## 2026-11-12 · Option+Enter for a new line
 - Option+Enter starts a new line in the message box and in a queued message you're editing, like Shift+Enter, instead of sending.
 

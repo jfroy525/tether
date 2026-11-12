@@ -171,8 +171,8 @@ class Api:
         if t == "context" and sid in self._worked and int(self.settings.get("auto_fresh") or 0) > 0 \
                 and (ev.get("totalTokens") or 0) >= int(self.settings["auto_fresh"]):
             self._bg(self._auto_fresh, sid, ev.get("totalTokens") or 0)
-        if t in ("job_done", "agent_done") and sid in self._fresh_wanted:  # it waited for this; Claude may reply first
-            threading.Timer(5, self._auto_fresh, (sid, 0)).start()
+        if t in ("job_done", "agent_done") and sid in self._fresh_wanted:  # it waited for this; Claude may follow up first
+            threading.Timer(engine.WAKE_GRACE + 2, self._auto_fresh, (sid, 0)).start()  # a follow-up reply tries again on its own
         if t == "context" and ev.get("model") and ev.get("maxTokens"):
             self._remember_limit(ev)
         if t == "fast_unavailable" and ev.get("reason") and self.settings.get("fast_unavailable") != ev["reason"]:
@@ -2257,6 +2257,10 @@ class Api:
 
         def quit_():
             try:
+                self._shutdown()  # destroy() skips the closing event, so without this Claude would carry on unseen
+            except Exception as e:
+                print(f"[restart] shutdown: {e}", file=sys.stderr, flush=True)
+            try:
                 self._window.destroy()
             finally:
                 threading.Timer(10, os._exit, (0,)).start()  # in case a window hangs on
@@ -2278,6 +2282,10 @@ class Api:
 
         def quit_():
             try:
+                self._shutdown()  # destroy() skips the closing event, so without this Claude would carry on unseen
+            except Exception as e:
+                print(f"[restart] shutdown: {e}", file=sys.stderr, flush=True)
+            try:
                 self._window.destroy()
             finally:
                 threading.Timer(10, os._exit, (0,)).start()  # in case a window hangs on
@@ -2286,7 +2294,8 @@ class Api:
 
     def code_changed(self):
         """Whether Tether's own files differ from what this running copy loaded (edited on this Mac since it started)."""
-        return {"changed": bool(BOOT_CODE) and code_signature() != BOOT_CODE}
+        changed = bool(BOOT_CODE) and code_signature() != BOOT_CODE
+        return {"changed": changed, "pushed": changed and updater.pushed()}  # pushed: Update on its own restarts only then
 
     def take_reopen(self):
         """The chats that were open before an update restarted Tether, once."""

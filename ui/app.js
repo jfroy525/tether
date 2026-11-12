@@ -3752,7 +3752,7 @@ async function settingsDialog() {
       + row("Change log", `<button class="btn ghost small" id="cl-open">Open</button>`, "What changed in each update, and what an update would bring")
       + row("Claude Code", `<span class="upd-row"><span id="cc-line">Checking…</span></span>`, "Runs claude update, which uses however Claude Code was installed")
       + row("Restart", `<button class="btn ghost small" id="restart-open">Restart when idle</button>`, "Waits for every chat and job to finish, then reopens your chats")
-      + row("Update on its own when idle", sw("auto_update", !!s.auto_update), "When an update comes from GitHub or Tether's files change on this Mac, it waits until no chat is working, no message is half-typed and you haven't typed for a minute, then restarts and reopens your chats"))}
+      + row("Update on its own when idle", sw("auto_update", !!s.auto_update), "When an update comes from GitHub, or Tether's files change on this Mac and are pushed to GitHub, it waits until no chat is working, no message is half-typed and you haven't typed for a minute, then restarts and reopens your chats"))}
     <section class="set-sec"><h3>Advanced</h3>
       ${row("Stream Claude's thinking", sw("show_thinking", s.show_thinking), "Applies to sessions started after you change it")}
       ${row("Speech model", `<select data-k="whisper_model">${opts([["tiny", "Tiny (fastest)"], ["base", "Base"], ["small", "Small"], ["medium", "Medium (most accurate)"]], s.whisper_model)}</select>`)}

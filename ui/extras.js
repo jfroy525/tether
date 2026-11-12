@@ -561,7 +561,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     const r = await api().code_changed().catch(() => null);
     const b = $("#restart-btn");
     if (b) b.hidden = !r?.changed;
-    if (r?.changed) autoCheck("restart");
+    if (r?.changed && r.pushed) autoCheck("restart");  // on its own only once the change is on GitHub, not mid-edit
   }
 
   // ---------- kept in step with the rest ----------

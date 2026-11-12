@@ -77,6 +77,18 @@ def _pending_log() -> list[dict]:
     return [e for e in parse_log(text) if e["key"] not in have]
 
 
+def pushed() -> bool:
+    """Whether Tether's own files here match what was last pushed to GitHub's main: nothing changed, nothing new and
+    no commit waiting to go up. Doesn't ask GitHub (a push updates origin/main here). A copy without git counts as pushed."""
+    if not (HERE / ".git").exists():
+        return True
+    code, out = _git("status", "--porcelain", "--untracked-files=all", "--", "*.py", "ui/*.js", "ui/*.css", "ui/*.html", "markup.html", timeout=10)
+    if code != 0 or out.strip():
+        return False
+    code, ahead = _git("rev-list", "--count", "origin/main..HEAD", timeout=10)
+    return code == 0 and (ahead.strip() or "0") == "0"
+
+
 def status(force: bool = False) -> dict:
     """{behind, ahead, dirty, changes}: commits on GitHub's main not here yet, and whether this copy can take them."""
     if not (HERE / ".git").exists():

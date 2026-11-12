@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 SEARCH_PATHS = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.local/bin/claude", "~/.claude/local/claude"]
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 QUIET_TOOLS = {"TodoWrite", "ToolSearch", "SubagentHandback"}
+WAKE_GRACE = 30  # seconds a chat counts as busy after a background job or agent ends: Claude Code wakes it to follow up
 APP_PROMPT = """You are running inside Tether, a desktop window around Claude Code. Work exactly as you
 normally do. Extra tools from the workbench MCP server:
 - show_artifact: show an HTML page, SVG, Markdown or code file you wrote on the Shelf beside the chat. Use it
@@ -337,11 +338,14 @@ class Session:
             return f"{j} job{'s' if j > 1 else ''} running"
         if a:
             return f"{a} agent{'s' if a > 1 else ''} running"
+        if self.alive and time.time() - getattr(self, "_bg_ended", 0) < WAKE_GRACE:
+            return "following up on a job"  # Claude Code wakes the chat a few seconds after a job ends; don't cut that off
         return ""
 
     def busy_work(self) -> bool:
-        """Background commands or background sub-agents still running: closing the process would stop them."""
-        return bool(self.running_jobs() or self._bg_agents)
+        """Background commands or background sub-agents still running, or one just ended and Claude may be about to
+        follow up on it: closing the process would stop them."""
+        return bool(self.running_jobs() or self._bg_agents) or (self.alive and time.time() - getattr(self, "_bg_ended", 0) < WAKE_GRACE)
 
     def close(self) -> None:
         for j in self.running_jobs():  # they die with the process
@@ -481,6 +485,8 @@ class Session:
         if tid not in self._tasks or not use:
             return
         if sub == "task_updated" and (e.get("patch") or {}).get("status") == "completed":
+            if tid in self._bg_agents:
+                self._bg_ended = time.time()
             self._bg_agents.discard(tid)  # finished; its report comes in the task_notification, if one follows
         if sub == "task_progress":
             u = e.get("usage") or {}
@@ -488,6 +494,8 @@ class Session:
                        "tool": e.get("last_tool_name") or "", "tokens": u.get("total_tokens"), "tools": u.get("tool_uses"), "ms": u.get("duration_ms")})
         elif sub == "task_notification" or (sub == "task_updated" and (e.get("patch") or {}).get("status") in ("failed", "killed", "stopped")):
             status = e.get("status") or (e.get("patch") or {}).get("status")
+            if tid in self._bg_agents:
+                self._bg_ended = time.time()
             self._bg_agents.discard(tid)
             u = e.get("usage") or {}
             self.emit({"type": "agent_done", "sid": self.sid, "id": use, "status": status, "summary": str(e.get("summary") or "")[:8000],
@@ -536,6 +544,8 @@ class Session:
         if j["status"] == "running" or (j.get("guess") and not guess):  # Claude Code's own word beats our guess
             if j["status"] == "running":
                 j["ended"] = time.time()
+                if status != "stopped":
+                    self._bg_ended = j["ended"]
                 print(f"[jobs] {self.sid[:8]} end {tid} {status} via {'task list' if guess else 'task event'}", file=sys.stderr, flush=True)
             j["status"], j["guess"] = status, guess
         j["summary"] = summary or j["summary"]
