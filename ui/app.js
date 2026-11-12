@@ -2630,6 +2630,9 @@ function openToolsMenu() {
   renderToolsMenu(true);
   api().marks_up().then(v => { state.marksUp = !!v; if (!m.hidden) renderToolsMenu(); }, () => {});
 }
+function newLine(t) {  // insert a line break at the caret; keeps ⌘Z working and fires input so the box grows
+  if (!document.execCommand("insertText", false, "\n")) { t.setRangeText("\n", t.selectionStart, t.selectionEnd, "end"); t.dispatchEvent(new Event("input")); }
+}
 function autogrow() { const t = $("#input"); t.style.height = "auto"; t.style.height = Math.min(260, t.scrollHeight) + "px"; }
 function insertText(text) {
   const t = $("#input");
@@ -2783,7 +2786,8 @@ function editQueued(S, q) {
   };
   ta.oninput = fit;
   ta.onkeydown = e => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); done(true); $("#input").focus(); }
+    if (e.key === "Enter" && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing) { e.preventDefault(); newLine(ta); }  // Option+Enter: a new line
+    else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); done(true); $("#input").focus(); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); $("#input").focus(); }
   };
   ta.onblur = () => done(true);
@@ -3946,6 +3950,7 @@ function wire() {
       e.preventDefault(); const n = JSON.parse($("#slash").dataset.hits).length;
       slashSel = (slashSel + (e.key === "ArrowDown" ? 1 : n - 1)) % n; updateSlash(); return;
     }
+    if (e.key === "Enter" && e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing) { e.preventDefault(); newLine(input); return; }  // Option+Enter: a new line, like Shift+Enter
     if (slash && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
       e.preventDefault(); pickSlash(JSON.parse($("#slash").dataset.hits)[slashSel]); return;
     }

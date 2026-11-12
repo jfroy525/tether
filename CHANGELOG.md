@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-12 · Option+Enter for a new line
+- Option+Enter starts a new line in the message box and in a queued message you're editing, like Shift+Enter, instead of sending.
+
 ## 2026-11-12 · Editing a queued message
 - While you edit a queued message, the chat scrolls as the box grows, so Enter saves, Esc cancels and the buttons stay in view above the message box.
 
