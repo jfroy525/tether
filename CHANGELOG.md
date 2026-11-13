@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-13 · Tables wrap
+- Tables in chat wrap long text onto more lines instead of cutting it off with “…”. Numbers stay on one line.
+
 ## 2026-11-12 · Restarts wait for follow-ups
 - A restart or update waits 30 seconds after a background job or agent ends, so Claude can follow up on it first. An automatic fresh start waits the same way.
 - Restarting or updating from inside Tether stops each chat's Claude first, like ⌘Q, so no chat keeps working where you can't see it.

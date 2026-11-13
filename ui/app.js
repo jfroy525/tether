@@ -70,7 +70,7 @@ window.makeTable = function ({ title, columns, rows, note, inline }) {
     const head = "<tr>" + columns.map((c, i) => `<th data-c="${i}" class="${i === sortCol ? (dir > 0 ? "asc" : "desc") : ""}">${window.mdInline(String(c))}</th>`).join("") + "</tr>";
     const body = data.slice(0, limit).map(r => "<tr>" + columns.map((_, i) => {
       const v = r[i] ?? "";
-      return `<td class="${numCol[i] ? "num" : ""}" title="${esc(v)}">${inline ? window.mdInline(String(v)) : esc(v)}</td>`;
+      return `<td class="${numCol[i] ? "num" : ""}">${inline ? window.mdInline(String(v)) : esc(v)}</td>`;
     }).join("") + "</tr>").join("");
     table.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
     foot.innerHTML = `<span>${rows.length} row${rows.length === 1 ? "" : "s"} · ${columns.length} col</span>` + (note ? `<span>${esc(note)}</span>` : "");

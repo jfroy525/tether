@@ -435,9 +435,10 @@ table.data th { position: sticky; top: 0; background: var(--th-bg); text-align: 
   padding: 7px 12px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; user-select: none; }
 table.data th:hover { color: var(--text); }
 table.data th.asc::after { content: " ↑"; } table.data th.desc::after { content: " ↓"; }
-table.data td { padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+table.data td { padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: top; min-width: 72px; max-width: 420px; overflow-wrap: break-word; }  /* long text wraps; nothing is cut off */
+table.data td code { white-space: normal; overflow-wrap: anywhere; }  /* long names like SHC_PB_Claims_WQ break inside the box */
 table.data tr:last-child td { border-bottom: 0; }
-table.data td.num { text-align: right; font: var(--fs-meta) var(--mono); }
+table.data td.num { text-align: right; font: var(--fs-meta) var(--mono); white-space: nowrap; min-width: 0; }
 table.data tr:hover td { background: var(--hover); }
 .table-card .tf { display: flex; gap: 14px; padding: 6px 14px; border-top: 1px solid var(--line); font-size: var(--fs-meta); color: var(--text-3); }
 .msg-text .table-card { margin: 0 0 12px; }
