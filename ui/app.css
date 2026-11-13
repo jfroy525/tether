@@ -429,7 +429,7 @@ img.inline-img { display: block; max-width: min(520px, 100%); max-height: 340px;
 .table-card { border: 1px solid var(--line); border-radius: var(--r-3); overflow: hidden; background: var(--surface); box-shadow: var(--pane-hi); }
 .table-card .th { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line); }
 .table-card .th .ttl { font-weight: 600; flex: 1; font-size: var(--fs-ctl); }
-.table-card .tw { overflow: auto; max-height: 460px; }
+.table-card .tw { overflow-x: auto; }  /* full height in the chat; sideways only if the columns truly can't fit */
 table.data { border-collapse: collapse; width: 100%; font-size: var(--fs-ctl); }
 table.data th { position: sticky; top: 0; background: var(--th-bg); text-align: left; font-size: var(--fs-meta); font-weight: 600; color: var(--text-2);
   padding: 7px 12px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; user-select: none; }

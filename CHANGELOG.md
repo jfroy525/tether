@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-13 · Tables show in full
+- Tables in chat show at full height instead of scrolling inside a box; they scroll sideways only when the columns can't fit.
+
 ## 2026-11-13 · Tables wrap
 - Tables in chat wrap long text onto more lines instead of cutting it off with “…”. Numbers stay on one line.
 
