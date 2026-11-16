@@ -258,6 +258,12 @@ body { --glass-rgb: 255, 255, 255; } body.dark { --glass-rgb: 13, 19, 23; }
       <div class="cbar us"><span>Tether fresh start</span><span class="track"><span class="fill" style="width:18.3%;display:block"></span></span><span class="v">$1.64</span></div>
       <div class="src">Measured on six real pauses in long Opus chats: the cost of the first reply after each pause, added up. Per reply, about $1.49 vs $0.27.</div>
     </div>
+    <div class="cost">
+      <div class="t">About 58% cheaper across 17 days of long chats</div>
+      <div class="cbar"><span>Compaction, 1M window</span><span class="track"><span class="fill" style="width:100%;display:block"></span></span><span class="v">$1,478</span></div>
+      <div class="cbar us"><span>Tether fresh starts</span><span class="track"><span class="fill" style="width:42.4%;display:block"></span></span><span class="v">$627</span></div>
+      <div class="src">Three long chats, 7,038 requests to Claude, 63 fresh starts. Tether is what was billed. Compaction is the same requests replayed in one session that compacts at Claude Code's 1M window, worked out from the billed usage, not run for real.</div>
+    </div>
     <div class="where"><b>Where:</b> Header › Notes. Start fresh from Notes, the context meter, or a chat's ⋯ menu.</div>
   </section>
 

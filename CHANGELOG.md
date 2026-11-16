@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-16 · Highlights page: cost over 17 days
+- The Highlights page adds a second cost graph: long chats cost about 58% less with fresh starts than with compaction at Claude Code's 1M window.
+
 ## 2026-11-13 · Tables show in full
 - Tables in chat show at full height instead of scrolling inside a box; they scroll sideways only when the columns can't fit.
 
