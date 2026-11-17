@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-16 · “Working” no longer sticks after a reply
+- A chat could keep showing “Working” after Claude's reply had ended. Tether now keeps checking until the reply's end is taken in, and counts each message before sending it.
+
 ## 2026-11-16 · Highlights page: cost over 17 days
 - The Highlights page adds a second cost graph: long chats cost about 58% less with fresh starts than with compaction at Claude Code's 1M window.
 

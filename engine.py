@@ -394,15 +394,15 @@ class Session:
         try:
             if not self.alive:
                 self._start()
+            self._unread += 1  # before it goes in: the echo can come back before _send returns
             self._send(msg)
-            self._unread += 1
         except (OSError, ValueError):  # it stopped just as the message went in: start it again once
             time.sleep(0.5)  # lets its last words reach _stderr
             self.close()
             try:
                 self._start()
+                self._unread = 1
                 self._send(msg)
-                self._unread += 1
             except (OSError, ValueError):
                 time.sleep(0.5)
                 tail = " ".join(l for l in self._stderr[-4:] if l)[:400]
@@ -617,9 +617,14 @@ class Session:
 
     def _release_held(self, held) -> None:
         """Safety net: nothing came for 30 s after a held finish signal, so it was the end after all."""
-        if self._held is held and time.time() - self.last_own >= 29:
-            self._held, self._unread = None, 0
-            self._event(held[0])
+        if self._held is not held:
+            return  # your message was taken in, or a later finish signal replaced this one
+        if time.time() - self.last_own < 29:  # Claude Code wrote something since (a context answer, say): look again
+            threading.Timer(10, self._release_held, (held,)).start()
+            return
+        print(f"[turn] {self.sid[:8]} held finish released after {round(time.time() - held[1])}s", file=sys.stderr, flush=True)
+        self._held, self._unread = None, 0
+        self._event(held[0])
 
     def _read_out(self, proc) -> None:
         for line in proc.stdout:
@@ -829,6 +834,7 @@ class Session:
                 # a turn Claude ran on its own (say, a notice about background commands stopped by a restart) ended
                 # before it took in your message: yours is still coming, so this doesn't end it
                 self._held = (e, time.time())
+                print(f"[turn] {self.sid[:8]} finish held: {self._unread} message(s) not echoed yet", file=sys.stderr, flush=True)
                 threading.Timer(30, self._release_held, (self._held,)).start()
                 return
             self.emit({"type": "result", "sid": sid, "ok": not e.get("is_error"), "subtype": e.get("subtype"),
