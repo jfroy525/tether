@@ -889,15 +889,13 @@ function artifactLine(S, a) {
   return line;
 }
 function onArtifact(S, ev) {
-  const known = (S.viewItems || []).some(it => it.path === ev.path);
   S.viewLive = [...(S.viewLive || []).filter(x => x.path !== ev.path), { path: ev.path, short: ev.short, title: ev.title, from: "claude", type: VIEW_TYPE_OF(ev.path), ts: Date.now() / 1000 }];
   const pickNew = () => { S.viewSel = ev.path; S.viewN = 0; S.viewBase = null; };  // the newest thing Claude showed is what you see next
   loadView(S).then(() => {
-    if (S.sid !== state.active) { pickNew(); S.viewDot = true; return; }
-    const showing = state.panel && state.tab === "view";
-    if (showing && S.viewSel === ev.path) return renderView(S, $("#panel-body"), true);
-    if (showing || (!state.panel && !S.viewAuto) || !known) { S.viewAuto = true; openInView(S, ev.path, { auto: !showing && state.panel }); }
-    else { pickNew(); S.viewDot = true; syncViewTab(); }
+    // Claude showing something always opens the Shelf on it: now if this chat is in front, else when you come back to it
+    if (S.sid !== state.active) { pickNew(); S.viewDot = true; S.viewWant = true; return; }
+    if (state.panel && state.tab === "view" && S.viewSel === ev.path) return renderView(S, $("#panel-body"), true);
+    openInView(S, ev.path);
   });
 }
 // the most recently shown or opened item; one Claude just showed counts as newest
@@ -908,7 +906,7 @@ async function renderView(S, body, refresh) {
   const items = S.viewItems || await loadView(S);
   if (!items.length) return renderShelfEmpty(S, body);
   const it = items.find(x => x.path === S.viewSel) || newestItem(items);  // what you had is gone: the newest, not the end of the list
-  S.viewSel = it.path; S.viewDot = false; syncViewTab();
+  S.viewSel = it.path; S.viewDot = false; S.viewWant = false; syncViewTab();
   const same = viewShown.sid === S.sid && viewShown.path === it.path;
   if (!same) { viewShown.scroll = [0, 0]; viewShown.mode = "file"; }
   const r = it.src ? { type: "image", src: it.src, short: it.title } : await api().view_get(S.sid, it.path, S.viewBase || 0, S.viewN || 0);
@@ -2280,7 +2278,11 @@ function activate(sid, keep) {  // keep: a click inside the other half of a spli
   renderBar();
   refreshRepo();
   document.body.classList.remove("view-full");
-  syncViewTab(); loadView(S).then(() => { if (state.panel && state.tab === "view" && state.active === S.sid) renderPanel(); });
+  syncViewTab(); loadView(S).then(() => {
+    if (state.active !== S.sid) return;
+    if (S.viewWant && !keep) { S.viewWant = false; S.viewDot = false; return togglePanel(true, "view"); }  // Claude showed something while you were in another chat
+    if (state.panel && state.tab === "view") renderPanel();
+  });
   if (!keep) { scrollDown(S, true); S.stick = true; }
   syncJump();
   if (!keep) $("#input").focus();

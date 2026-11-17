@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-16 · The Shelf opens when Claude shows something
+- Each time Claude shows a page the Shelf opens on it, even if you closed it earlier or another tab was open.
+- If Claude shows something while you're in another chat, the Shelf opens when you come back to that chat.
+
 ## 2026-11-16 · “Working” no longer sticks after a reply
 - A chat could keep showing “Working” after Claude's reply had ended. Tether now keeps checking until the reply's end is taken in, and counts each message before sending it.
 
