@@ -199,10 +199,20 @@ const Extras = (() => {
   let moving = false, anims = [];
   const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const shown = () => [...state.open.values()].filter(S => !S.el.hidden);
+  // Each animation is made holding its first frame, and starts only once that frame has been drawn. Laying out a
+  // long chat for a new pane can take longer than the motion itself; started straight away, it would be over
+  // before anything showed.
+  let held = [], heldAt = 0;
   function play(node, frames, opts, done) {
-    const a = node.animate(frames, { duration: DUR, easing: EASE, ...opts });
-    anims.push(a);
+    const a = node.animate(frames, { duration: DUR, easing: EASE, fill: "backwards", ...opts });
+    a.pause();
+    anims.push(a); held.push(a);
     a.onfinish = a.oncancel = () => { anims = anims.filter(x => x !== a); done && done(); };
+    if (!heldAt) heldAt = requestAnimationFrame(() => requestAnimationFrame(() => {
+      heldAt = 0;
+      const go = held; held = [];
+      for (const x of go) if (x.playState === "paused") x.play();
+    }));
   }
   function morph(fn) {
     const chats = $("#chats"), comp = $("#composer");
@@ -425,13 +435,20 @@ const Extras = (() => {
   };
 
   // The message box sits under the pane in front. It lives outside the chat area, so its place is worked out in pixels.
+  let frame = null, frameWatch = null;
   function place() {
     const main = $("#main"), chats = $("#chats"), i = sp.sides.indexOf(state.active);
     if (!sp.on || i < 0) { ["--cl", "--cr", "--cb"].forEach(k => main.style.removeProperty(k)); return; }
-    const [l, , r, b] = paneRects()[i], c = chats.getBoundingClientRect(), m = main.getBoundingClientRect();
-    main.style.setProperty("--cl", c.left - m.left - main.clientLeft + c.width * l / 100 + "px");
-    main.style.setProperty("--cr", m.right - main.clientLeft - (c.left + c.width * r / 100) + "px");
-    main.style.setProperty("--cb", m.bottom - main.clientTop - (c.top + c.height * b / 100) + "px");
+    // where the chat area sits inside the main pane: measured once and kept until either changes size
+    if (!frame) {
+      const c = chats.getBoundingClientRect(), m = main.getBoundingClientRect();
+      frame = { l: c.left - m.left - main.clientLeft, r: m.right - main.clientLeft - c.right, b: m.bottom - main.clientTop - c.bottom, w: c.width, h: c.height };
+      if (!frameWatch && window.ResizeObserver) { frameWatch = new ResizeObserver(() => { frame = null; if (sp.on) place(); }); frameWatch.observe(chats); frameWatch.observe(main); addEventListener("resize", () => { frame = null; }); }
+    }
+    const [l, , r, b] = paneRects()[i], f = frame;
+    main.style.setProperty("--cl", f.l + f.w * l / 100 + "px");
+    main.style.setProperty("--cr", f.r + f.w * (100 - r) / 100 + "px");
+    main.style.setProperty("--cb", f.b + f.h * (100 - b) / 100 + "px");
   }
 
   // Put a chat in a pane. One that's already in another pane swaps places with what was here.
@@ -571,9 +588,10 @@ const Extras = (() => {
           const G = sp.geo[sp.layout], p = horiz ? ((ev.clientY - r.top) / r.height) * 100 : ((ev.clientX - r.left) / r.width) * 100;
           const lo = key === "x2" ? G.x + 18 : sp.layout === "3" ? 18 : 25, hi = key === "x" && G.x2 ? G.x2 - 18 : sp.layout === "3" ? 82 : 75;
           G[key] = Math.max(lo, Math.min(hi, p));
-          split.layout();
+          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); });
         };
-        const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
+        let raf = 0;
+        const up = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
         document.body.classList.add(horiz ? "split-drag-h" : "split-drag");
         document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
       };

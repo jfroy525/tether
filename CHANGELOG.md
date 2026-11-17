@@ -5,6 +5,11 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Split animations show, and resizing panes is faster
+- With long chats, the split animations were mostly over before the first frame was drawn. They now start once that frame is on screen.
+- Dragging the line between panes does one layout per frame, about three times faster with long chats.
+- A split change lays the chats out once, not twice.
+
 ## 2026-11-17 · Restart icon shows what changed
 - Hover the restart icon (shown when Tether's files changed on this Mac) for what the restart will load: the change log entries added since Tether started, or the names of edited files when there is no entry yet.
 
