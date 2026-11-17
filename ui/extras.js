@@ -621,8 +621,8 @@ const Extras = (() => {
         };
         let raf = 0;
         const tm = timer.stream(`drag a pane line, split ${sp.layout}`);
-        const up = () => { tm.end(); if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
-        document.body.classList.add(horiz ? "split-drag-h" : "split-drag");
+        const up = () => { tm.end(); if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); g.classList.remove("drag"); };
+        document.body.classList.add(horiz ? "split-drag-h" : "split-drag"); g.classList.add("drag");
         document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
       };
       g.ondblclick = () => morph(() => { sp.geo[sp.layout][key] = GEO[sp.layout][key]; split.layout(); });

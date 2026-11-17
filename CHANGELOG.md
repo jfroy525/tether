@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Quieter lines in split view
+- The short handle marks on the lines between panes are gone. A line lights up along its length when you hover or drag it.
+
 ## 2026-11-17 · Long chats stay quick
 - A long chat keeps only its newest 150 or so blocks laid out. Older ones come back as you scroll up, and a "Show earlier messages" line sits at the top as a fallback.
 - Splitting, dragging pane lines and resizing the window with long chats are about twice as fast.
