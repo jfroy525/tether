@@ -1036,7 +1036,14 @@ body.mini-go #app { transition: grid-template-columns .9s var(--mini-ease); }
 body.mini-go #side { transition: opacity .3s var(--soft); }
 body.mini-go #panel { transition: width .9s var(--mini-ease), margin .9s var(--mini-ease), opacity .3s var(--soft); }
 body.mini-go #bar { transition: height .5s var(--soft), padding .5s var(--soft); }
-body.mini-go .chat-inner, body.mini-go #composer { transition: padding .5s var(--soft); }
+body.mini-go #composer { transition: padding .5s var(--soft); }
+/* the chat text wraps once for the size it is heading to (--mini-cw, set in app.js), fades in at that wrap, and
+   stays put in the middle of the pane while the window moves */
+body.mini-go .chat-inner { animation: mini-text .38s var(--soft) both; }
+body.mini-hold .chat { overflow-x: hidden; }
+body.mini-hold .chat-inner { width: var(--mini-cw); max-width: none; flex: none; margin-left: calc((100% - var(--mini-cw)) / 2); margin-right: 0; }
+@keyframes mini-text { 0%, 12% { opacity: 0; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { body.mini-go .chat-inner { animation: none; } }
 body.mini #app { grid-template-columns: 0px minmax(0, 1fr) auto; }
 body.mini #side { opacity: 0; pointer-events: none; }
 body.mini #panel { width: 0 !important; margin: 8px 0; opacity: 0; pointer-events: none; }

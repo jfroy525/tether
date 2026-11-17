@@ -2171,8 +2171,15 @@ class Api:
         n = self._window.native if self._window else None
         if not n or n.styleMask() & AppKit.NSWindowStyleMaskFullScreen:
             return False
-        AppHelper.callAfter(self._mini, bool(on))
-        return True
+        on = bool(on)
+        w = n.frame().size.width
+        if on:  # the widths before and after, so the page can wrap its text once for the size it is heading to
+            saved = self.settings.get("mini_frame") or []
+            to = saved[2] if len(saved) == 4 and saved[2] >= MINI_MIN[0] and saved[3] >= MINI_MIN[1] else MINI_SIZE[0]
+        else:
+            to = self._full_frame.size.width if self._full_frame else 1360
+        AppHelper.callAfter(self._mini, on)
+        return {"from": w, "to": to}
 
     def set_mini_on_top(self, on):
         self.settings["mini_on_top"] = bool(on)

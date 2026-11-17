@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Steadier text in the mini window switch
+- Going to the mini window and back, the chat text wraps once for the new size and holds still while the window moves. Before, it rewrapped on every frame.
+
 ## 2026-11-17 · Split view with up to four chats
 - Hover the Split button to pick a layout: One chat, Two side by side, Three side by side, One large with two stacked, or Four in a grid. A click still toggles two side by side.
 - Click a pane's name to put another chat in it; a chat already in another pane swaps places. You can also drag a chat from the sidebar onto a pane, or use Add to split in a chat's menu.

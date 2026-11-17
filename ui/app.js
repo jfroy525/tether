@@ -3002,13 +3002,39 @@ function setMini(on) {
   if (on) Extras.split.off(true);
   if (!b.style.getPropertyValue("--mini-ease") && CSS.supports("transition-timing-function", "linear(0, 1)")) b.style.setProperty("--mini-ease", springCurve());
   const S = state.open.get(state.active), bottom = S && (on || nearBottom(S));  // the mini window shows the latest messages
+  // how much of the window's width is not chat, in the size we are leaving; used on the way back
+  const gap = setMini.gap || (setMini.gap = { mini: 18 });
+  if (S) gap[now ? "mini" : "full"] = innerWidth - S.el.clientWidth;
+  b.classList.remove("mini-hold");
   b.classList.add("mini-go");
   b.classList.toggle("mini", on);
   $("#ctx-menu").hidden = true;
   api().set_mini(on).then(ok => {
-    if (ok !== false) return;
-    b.classList.toggle("mini", !on); b.classList.remove("mini-go"); renderMiniBar(); renderBar();
-    toast("Leave full screen first.");
+    if (ok === false) {
+      b.classList.toggle("mini", !on); b.classList.remove("mini-go", "mini-hold"); renderMiniBar(); renderBar();
+      toast("Leave full screen first.");
+      return;
+    }
+    // Wrap the text once, at the width the chat will have when the window lands, and hold it there while the
+    // window moves; the window then uncovers or covers steady text instead of rewrapping it on every frame.
+    const inner = S && S.el.querySelector(".chat-inner"), g = gap[on ? "mini" : "full"];
+    if (!inner || g == null || !ok || !(ok.from > 0) || !(ok.to > 0)) return;
+    const chatW = innerWidth * ok.to / ok.from - g, read = parseFloat(getComputedStyle(inner).maxWidth);
+    if (!(chatW > 120)) return;
+    const cw = Math.round(Math.min(chatW, read > 0 ? read : chatW));
+    b.style.setProperty("--mini-cw", cw + "px");
+    b.classList.add("mini-hold");
+    if (bottom) { S.el.scrollTop = S.el.scrollHeight; S.setTop = S.el.scrollTop; }
+    // shrinking, the window squeezes a little past the mini size before it settles; the text squeezes with it
+    // (from the bottom edge of the messages) so its sides are never cut off
+    const squeeze = () => {
+      if (!b.classList.contains("mini-hold") || !inner.isConnected) { inner.style.transform = inner.style.transformOrigin = ""; return; }
+      const k = Math.min(1, S.el.clientWidth / cw);
+      inner.style.transformOrigin = `50% ${inner.offsetHeight - parseFloat(getComputedStyle(inner).paddingBottom)}px`;
+      inner.style.transform = k < 1 ? `scale(${k.toFixed(4)})` : "";
+      requestAnimationFrame(squeeze);
+    };
+    if (on) squeeze();
   });
   if (bottom) {  // text rewraps every frame as the window changes size; keep the newest line in view the whole way
     S.stick = true; S.glide = false;
@@ -3017,7 +3043,7 @@ function setMini(on) {
     hold();
   }
   clearTimeout(setMini.t);
-  setMini.t = setTimeout(() => { b.classList.remove("mini-go"); glide($("#view-seg")); if (state.panel) applyPanelW(); }, 950);
+  setMini.t = setTimeout(() => { b.classList.remove("mini-go", "mini-hold"); glide($("#view-seg")); if (state.panel) applyPanelW(); }, 950);
   renderMiniBar();
   renderBar();
 }
