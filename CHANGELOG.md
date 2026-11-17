@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · New highlights page
+- The highlights page (linked from the README) is redesigned: cost savings first, then each main feature with a small example you can click, including the Desk, split view and other models through a gateway.
+
 ## 2026-11-17 · Narrow message box stays tidy
 - In a narrow message box the model button no longer runs over Send. It drops the effort first, then the mode, and keeps the model name; a red dot shows when the mode is Bypass.
 - Under 400 px the Fast button and your favorite tools are hidden.
