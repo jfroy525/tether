@@ -870,8 +870,28 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
   function restartDialog(changed) {
     const n = busyChats().length;
     if (rs.waiting) {
-      const box = openModal(`<h2>Restarting when idle</h2><p class="modal-p">Tether restarts when ${n === 1 ? "1 chat finishes" : `${n} chats finish`}, then reopens your chats.</p>
-        <div class="modal-acts"><button class="btn ghost" data-k="stop">Don't restart</button><button class="btn primary" data-close>Keep waiting</button></div>`);
+      // the same plain sentence as the block in the sidebar, from the same list, so it names the chat and why
+      const up = rs.mode === "update", verb = up ? "update" : "restart", tail = ", then reopen your chats.";
+      const box = openModal(`<h2>${up ? "Update" : "Restart"} is waiting</h2><p class="modal-p"></p><div class="rl-list"></div>
+        <div class="modal-acts"><button class="btn ghost" data-k="stop">Cancel ${verb}</button><button class="btn primary" data-close>Keep waiting</button></div>`);
+      const t = box.querySelector(".modal-p"), nm = c => (state.open.get(c.sid)?.title) || c.title, bold = x => { const e = el("b"); e.textContent = x; return e; };
+      const cs = rs.chats.length ? rs.chats : null;
+      if (!cs) t.textContent = `Tether will ${verb} when ${n === 1 ? "1 chat finishes" : n ? `${n} chats finish` : "your chats are idle"}${tail}`;
+      else if (cs.length === 1) {
+        const [x, z] = restartWhy(cs[0]);
+        t.append(`Tether will ${verb} ${x}`);
+        if (cs[0].sid) t.append(bold(nm(cs[0])));
+        t.append(z + tail);
+      } else {
+        const chats = cs.every(c => c.sid);
+        t.append(`Tether will ${verb} ${chats ? "when these " : "after these "}`, bold(`${cs.length} ${chats ? "chats" : "things"}`), (chats ? " finish" : " are done") + tail);
+        for (const c of cs.slice(0, 6)) {
+          const r = el("div", "rl-row you", `<span class="wt-dot ${c.why === "needs your answer" ? "warn" : "run"}"></span><span class="nm"></span><span class="why"></span>`);
+          r.querySelector(".nm").textContent = nm(c); r.querySelector(".why").textContent = c.why;
+          box.querySelector(".rl-list").appendChild(r);
+        }
+        if (cs.length > 6) box.querySelector(".rl-list").appendChild(el("div", "rl-more", `and ${cs.length - 6} more`));
+      }
       box.querySelector('[data-k="stop"]').onclick = () => { closeModal(); cancelRestart(); };
       return;
     }

@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Restart box names the chat
+- The box that shows while a restart waits now says which chat it is waiting for and why, in the same plain sentence as the sidebar, for example "Tether will restart when Data Forge finishes replying, then reopen your chats." Several chats are listed with their reasons.
+- Its button reads Cancel restart, to match the sidebar.
+
 ## 2026-11-17 · Steadier text in the mini window switch
 - Going to the mini window and back, the chat text wraps once for the new size and holds still while the window moves. Before, it rewrapped on every frame.
 
