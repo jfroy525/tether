@@ -645,7 +645,34 @@ class Api:
                                               file_types=self._desk_types(desk.APPS.get(app, {}).get("types")))
         if not got:
             return None
-        return self._desk.read(app, self._desk.grant(got[0] if isinstance(got, (list, tuple)) else got))
+        return self._desk.read(app, self._desk.grant(got[0] if isinstance(got, (list, tuple)) else got, app, picked=True))
+
+    def desk_files(self, app, folder=""):
+        """An editor's Files list: its recent files, and what's in a folder you've picked a file in."""
+        return self._desk.files(app, folder or "")
+
+    def desk_folder(self, app):
+        """Choose folder… in the Files list: the folder box, then that folder's files."""
+        got = self._window.create_file_dialog(webview.FOLDER_DIALOG, directory=self._desk._start_dir())
+        if not got:
+            return None
+        return self._desk.files(app, self._desk.add_root(got[0] if isinstance(got, (list, tuple)) else got))
+
+    def desk_rename(self, path, name):
+        return self._desk.rename(path, name)
+
+    def desk_duplicate(self, path):
+        return self._desk.duplicate(path)
+
+    def desk_trash(self, path):
+        return self._desk.trash(path)
+
+    def desk_move(self, path):
+        """Move to… in the Files list: the folder box, then the move."""
+        got = self._window.create_file_dialog(webview.FOLDER_DIALOG, directory=str(Path(path).parent))
+        if not got:
+            return None
+        return self._desk.move(path, got[0] if isinstance(got, (list, tuple)) else got)
 
     def desk_read(self, app, path):
         return self._desk.read(app, path)
@@ -663,11 +690,11 @@ class Api:
         path = got[0] if isinstance(got, (list, tuple)) else got
         if not Path(path).suffix and Path(name or "").suffix:
             path += Path(name).suffix
-        return self._desk.write(app, self._desk.grant(path), data or {})
+        return self._desk.write(app, self._desk.grant(path, app, picked=True), data or {})
 
     def desk_save_to(self, app, path, data):
         """Claude's desk tool saving under a path it was given."""
-        return self._desk.write(app, self._desk.grant(path), data or {})
+        return self._desk.write(app, self._desk.grant(path, app), data or {})
 
     def desk_image(self):
         """Folio's Insert › Picture: a PNG, JPEG or GIF you pick, as the page holds it."""

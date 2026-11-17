@@ -21,6 +21,7 @@ const DeskHost = (() => {
       <span class="spacer"></span>
       <button class="icb" id="desk-full" title="Full window"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg></button></div><div class="desk-stage"></div>`;
     box().querySelectorAll("[data-app]").forEach(b => b.onclick = () => show(b.dataset.app));
+    dragOrder(box().querySelector(".desk-apps"), "[data-app]", "app", "wb.deskOrder");
     $("#desk-full").onclick = () => { const on = document.body.classList.toggle("desk-full"); $("#desk-full").title = on ? "Back to chat" : "Full window"; applyPanelW(); };
     let t = 0;
     const again = () => { clearTimeout(t); t = setTimeout(() => Object.values(frames).forEach(fr => post(fr, themeMsg())), 60); };
@@ -79,6 +80,12 @@ const DeskHost = (() => {
       case "saveTo": return api().desk_save_to(app, a.path, a.data);
       case "saveAs": return api().desk_save_as(app, a.name, a.data, a.types);
       case "stat": return api().desk_stat(a.path);
+      case "files": return api().desk_files(app, a.dir || "");
+      case "folder": return api().desk_folder(app);
+      case "rename": return api().desk_rename(a.path, a.name);
+      case "duplicate": return api().desk_duplicate(a.path);
+      case "trash": return api().desk_trash(a.path);
+      case "move": return api().desk_move(a.path);
       case "draftLoad": return api().desk_draft_load(app);
       case "draftSave": return api().desk_draft_save(app, a.draft);
       case "reveal": return api().reveal(a.path);

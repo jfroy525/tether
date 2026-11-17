@@ -116,7 +116,7 @@ const Desk = (() => {
     const d = { path: r.path, name: r.name, dirty: false, mtime: r.mtime };
     try { await A.load(r, d); } catch (e) { toast(`Couldn't open ${r.name}: ${e.message || e}`, 4000); return false; }
     if (!A.many) doc = d;
-    paint(); saveDraft();
+    paint(); saveDraft(); if (drawer?.classList.contains("on")) listFiles(listing?.dir);
     return true;
   }
   async function open() {
@@ -130,7 +130,7 @@ const Desk = (() => {
     let r;
     try { r = await call("save", { path: doc.path, data: await A.dump(ext) }); } catch (e) { r = { error: e.message }; }
     if (!r || r.error) { toast(r?.error || "Couldn't save.", 4000); return false; }
-    doc.mtime = r.mtime; doc.dirty = false; paint(); saveDraft(); toast("Saved");
+    doc.mtime = r.mtime; doc.dirty = false; paint(); saveDraft(); toast("Saved"); if (drawer?.classList.contains("on")) listFiles(listing?.dir);
     return true;
   }
   async function saveAs(type) {  // type: one of A.types ([label, ext]); the first is the editor's own
@@ -140,7 +140,7 @@ const Desk = (() => {
     if (!r) return false;
     if (r.error) { toast(r.error, 4000); return false; }
     if (!type || type === A.types[0] || !doc.path) { doc.path = r.path; doc.name = r.name; doc.mtime = r.mtime; doc.dirty = false; }
-    paint(); saveDraft(); toast(`Saved ${r.name}`);
+    paint(); saveDraft(); toast(`Saved ${r.name}`); if (drawer?.classList.contains("on")) listFiles("");
     return true;
   }
   // the file changed on disk (Claude or another app wrote it): take it if nothing is unsaved here, else ask
@@ -159,12 +159,103 @@ const Desk = (() => {
     $(".bar").after(n);
   }
 
+
+  // ----- the Files list: recent files, and the folders you've picked files in. Open, rename, copy, move, delete.
+  const FI = {
+    files: '<svg viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.500H12L10 5H4.500A1.500 1.500 0 0 0 3 6.500z"/></svg>',
+    folder: '<svg viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.500H12L10 5H4.500A1.500 1.500 0 0 0 3 6.500z"/></svg>',
+    file: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  };
+  let drawer = null, listing = null, filter = "";
+  const when = t => { const d = new Date(t * 1000), n = new Date(); return d.toDateString() === n.toDateString() ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(d.getFullYear() !== n.getFullYear() ? { year: "numeric" } : {}) }); };
+  const openPaths = () => A.paths ? A.paths() : doc.path ? [doc.path] : [];
+  async function openPath(path) {
+    if (A.focus?.(path)) return drawFiles();
+    if (!A.many && path === doc.path) return;
+    if (!A.many && !(await okToDrop())) return;
+    await load(await call("read", { path })); drawFiles();
+  }
+  // a file was renamed, moved or deleted from the list: whatever has it open follows it, and keeps its text
+  function moved(old, r) {
+    if (A.repath) A.repath(old, r);
+    else if (doc.path === old) { if (r) { doc.path = r.path; doc.name = r.name; doc.mtime = r.mtime; } else { doc.path = ""; doc.dirty = true; } }
+    paint(); saveDraft();
+  }
+  async function fileOp(op, f) {
+    let r = null;
+    try {
+      if (op === "rename") { const name = await ask("Rename", [["Cancel", null], ["Rename", true, "primary"]], f.name); if (!name || name === f.name) return; r = await call("rename", { path: f.path, name }); }
+      else if (op === "duplicate") r = await call("duplicate", { path: f.path });
+      else if (op === "move") r = await call("move", { path: f.path });
+      else if (op === "trash") { if (!(await ask(`Move <b>${esc(f.name)}</b> to the Trash?`, [["Cancel", null], ["Move to Trash", true, "primary"]]))) return; r = await call("trash", { path: f.path }); }
+    } catch (e) { r = { error: e.message }; }
+    if (!r) return;
+    if (r.error) return toast(r.error, 4000);
+    if (op === "rename" || op === "move") { moved(f.path, r); toast(op === "rename" ? `Renamed to ${r.name}` : `Moved ${r.name}`); }
+    else if (op === "trash") { moved(f.path, null); toast(`${f.name} is in the Trash`); }
+    else toast(`Made ${r.name}`);
+    await listFiles(op === "move" ? "" : listing?.dir);
+  }
+  function rowMenu(anchor, f) {
+    menu(anchor, [{ label: "Open", run: () => openPath(f.path) }, "-",
+      { label: "Rename…", run: () => fileOp("rename", f) }, { label: "Duplicate", run: () => fileOp("duplicate", f) }, { label: "Move to…", run: () => fileOp("move", f) },
+      { label: "Show in Finder", run: () => call("reveal", { path: f.path }) }, "-", { label: "Move to Trash", run: () => fileOp("trash", f) }]);
+  }
+  async function listFiles(dir) { try { listing = await call("files", { dir: dir || "" }); } catch (e) { listing = { error: e.message }; } drawFiles(); }
+  function drawFiles() {
+    if (!drawer || !listing) return;
+    const L = listing, body = drawer.querySelector(".fbody"), open = new Set(openPaths()), q = filter.trim().toLowerCase();
+    const hit = n => !q || n.toLowerCase().includes(q);
+    body.innerHTML = "";
+    const row = (f, kind, sub) => {
+      const n = el("div", "frow" + (open.has(f.path) ? " on" : ""), `${kind === "folder" ? FI.folder : FI.file}<span class="fn"></span><span class="fs"></span>${kind === "folder" ? "" : `<button class="ib fm" title="Rename, copy, move or delete">${FI.more}</button>`}`);
+      n.querySelector(".fn").textContent = f.name; n.querySelector(".fs").textContent = sub || ""; n.title = f.path;
+      n.onclick = e => { if (e.target.closest(".fm")) return rowMenu(e.target.closest(".fm"), f); kind === "folder" ? listFiles(f.path) : openPath(f.path); };
+      if (kind !== "folder") n.oncontextmenu = e => { e.preventDefault(); rowMenu({ x: e.clientX, y: e.clientY }, f); };
+      body.appendChild(n);
+    };
+    const rec = (L.recent || []).filter(f => hit(f.name));
+    if (rec.length) { body.appendChild(el("div", "fh", "Recent")); rec.forEach(f => row(f, "file", f.where)); }
+    if (L.dir) {
+      const h = el("div", "fh dir", `${L.up ? `<button class="ib" data-a="up" title="Up one folder">${FI.up}</button>` : ""}<span class="fn"></span>`);
+      h.querySelector(".fn").textContent = L.name; h.title = L.dir;
+      const u = h.querySelector("[data-a=up]"); if (u) u.onclick = () => listFiles(L.up);
+      if ((L.roots || []).length > 1) { h.classList.add("pickable"); h.querySelector(".fn").onclick = () => menu(h, L.roots.map(r => ({ label: r.name, run: () => listFiles(r.path) }))); h.querySelector(".fn").insertAdjacentHTML("beforeend", IC.chev); }
+      body.appendChild(h);
+      const fo = L.folders.filter(f => hit(f.name)), fi = L.files.filter(f => hit(f.name));
+      fo.forEach(f => row(f, "folder")); fi.forEach(f => row(f, "file", when(f.mtime)));
+      if (!fo.length && !fi.length) body.appendChild(el("div", "fnone", q ? "Nothing matches." : "No files of this kind here."));
+    }
+    if (L.error) body.appendChild(el("div", "fnone", esc(L.error)));
+    drawer.classList.toggle("bare", !L.dir && !rec.length);
+  }
+  function toggleFiles(on) {
+    const want = on ?? !drawer?.classList.contains("on");
+    if (!drawer) {
+      drawer = el("div", "files", `<div class="ftop"><input class="field" placeholder="Find" spellcheck="false"><button class="ib" data-a="close" title="Close the list">${FI.x}</button></div><div class="fbody"></div>
+        <div class="fbot"><button class="btn" data-a="folder">${FI.folder}<span>Choose folder…</span></button></div>`);
+      drawer.querySelector("input").oninput = e => { filter = e.target.value; drawFiles(); };
+      drawer.querySelector("input").onkeydown = e => { e.stopPropagation(); if (e.key === "Escape") toggleFiles(false); };
+      drawer.querySelector("[data-a=close]").onclick = () => toggleFiles(false);
+      drawer.querySelector("[data-a=folder]").onclick = async () => { const r = await call("folder"); if (r) { listing = r; drawFiles(); } };
+      $(".grow").appendChild(drawer); drawer.offsetWidth;
+      $(".grow").addEventListener("pointerdown", e => { if (drawer.classList.contains("on") && !drawer.contains(e.target)) toggleFiles(false); });  // a click in the file puts the list away
+    }
+    drawer.classList.toggle("on", want); $("#files-btn")?.classList.toggle("on", want);
+    if (want) listFiles(listing?.dir);
+  }
+
   function fileMenu(anchor) {
     menu(anchor, [
-      { label: "New", key: "⌘N", run: fresh }, { label: "Open…", key: "⌘O", run: open }, "-",
+      { label: "New", key: "⌘N", run: fresh }, { label: "Open…", key: "⌘O", run: open }, { label: "Files", key: "⇧⌘O", run: () => toggleFiles(true) }, "-",
       { label: "Save", key: "⌘S", run: () => save() }, { label: "Save as…", key: "⇧⌘S", run: () => saveAs() },
       ...(A.types.length > 1 ? ["-", { head: "Export a copy" }, ...A.types.slice(1).map(t => ({ label: `${t[0]} (.${t[1]})`, run: () => saveAs(t) }))] : []),
-      ...(doc.path ? ["-", { label: "Show in Finder", run: () => call("reveal", { path: doc.path }) }] : []),
+      ...(doc.path ? ["-", { label: "Rename…", run: () => fileOp("rename", { path: doc.path, name: doc.name }) }, { label: "Duplicate", run: () => fileOp("duplicate", { path: doc.path, name: doc.name }) },
+        { label: "Move to…", run: () => fileOp("move", { path: doc.path, name: doc.name }) }, { label: "Show in Finder", run: () => call("reveal", { path: doc.path }) },
+        { label: "Move to Trash", run: () => fileOp("trash", { path: doc.path, name: doc.name }) }] : []),
       ...(A.fileMenu ? ["-", ...A.fileMenu()] : []),
     ]);
   }
@@ -199,13 +290,14 @@ const Desk = (() => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey || A?.noFiles) return;
     const k = e.key.toLowerCase();
     if (k === "s") { e.preventDefault(); e.shiftKey ? saveAs() : save(); }
-    else if (k === "o" && !A.noFiles) { e.preventDefault(); open(); }
+    else if (k === "o" && !A.noFiles) { e.preventDefault(); e.shiftKey ? toggleFiles() : open(); }
     else if (k === "n" && !A.noFiles) { e.preventDefault(); fresh(); }
   }, true);
 
   async function start(App) {
     A = App;
     const n = $("#doc-name"); if (n) n.onclick = () => fileMenu(n);
+    if (n && !A.noFiles) { const b = el("button", "ib", FI.files); b.id = "files-btn"; b.title = "Files: recent ones and your folders (⇧⌘O)"; b.onclick = () => toggleFiles(); n.before(b); }
     const c = $("#ask-claude"); if (c) c.onclick = () => toChat(A.forChat());
     parent.postMessage({ desk: { app, id: 0, op: "hello", args: {} } }, "*");  // Tether answers with its colors
     let d = {}; try { d = (await call("draftLoad")) || {}; } catch (e) {}

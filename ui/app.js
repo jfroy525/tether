@@ -3247,6 +3247,49 @@ function togglePanel(on, tab) {
   if (state.panel) { renderPanel(); renderPR(); }
 }
 // the panel button and ⌘\ open the panel on the Shelf (the other tabs are a click away); a second press closes it
+// Drag a tab sideways to change the order (the side panel's tabs, the Desk's editors). The order is kept on this Mac.
+function dragOrder(box, sel, attr, key) {
+  if (!box) return;
+  const saved = (() => { try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; } })();
+  if (saved.length) {
+    const rank = n => { const i = saved.indexOf(n.dataset[attr]); return i < 0 ? 999 : i; };
+    [...box.querySelectorAll(sel)].map((n, i) => [n, rank(n), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).forEach(([n]) => box.appendChild(n));
+  }
+  const ease = { duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 190, easing: "cubic-bezier(.2,.7,.2,1)" };
+  box.addEventListener("mousedown", e => { if (e.target.closest(sel)) e.stopPropagation(); });  // a tab is not a handle for moving the window
+  box.addEventListener("pointerdown", e => {
+    const t = e.target.closest(sel); if (!t || e.button) return;
+    const x0 = e.clientX; let on = false, base = 0;
+    const move = ev => {
+      const dx = ev.clientX - x0;
+      if (!on) { if (Math.abs(dx) < 6) return; on = true; t.classList.add("reordering"); document.body.classList.add("tab-drag"); }
+      // places are read from the layout (which ignores the glide still playing on a tab just passed), and a fast
+      // drag can pass several tabs in one move
+      for (let n = 0; n < 8; n++) {
+        const left = t.offsetLeft + dx - base, mid = left + t.offsetWidth / 2;
+        const s = [...box.querySelectorAll(sel)].find(s => { if (s === t || s.hidden) return false;
+          const half = s.offsetLeft + s.offsetWidth / 2;
+          return s.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING ? left < half && mid < s.offsetLeft + s.offsetWidth : left + t.offsetWidth > half && mid > s.offsetLeft; });
+        if (!s) break;
+        const before = !!(s.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING), l0 = t.offsetLeft, s0 = s.offsetLeft;
+        box.insertBefore(t, before ? s : s.nextSibling);
+        base += t.offsetLeft - l0;
+        s.animate([{ transform: `translateX(${s0 - s.offsetLeft}px)` }, { transform: "none" }], ease);  // the one passed glides into its new place
+      }
+      t.style.transform = `translateX(${dx - base}px)`;
+    };
+    const up = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+      if (!on) return;
+      const from = t.style.transform; t.style.transform = ""; t.classList.remove("reordering"); document.body.classList.remove("tab-drag");
+      t.animate([{ transform: from }, { transform: "none" }], ease);
+      localStorage.setItem(key, JSON.stringify([...box.querySelectorAll(sel)].map(n => n.dataset[attr])));
+      const stop = ev => { ev.stopPropagation(); ev.preventDefault(); };  // the drop is not a click on the tab
+      box.addEventListener("click", stop, { capture: true, once: true }); setTimeout(() => box.removeEventListener("click", stop, true), 60);
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+  });
+}
 function openPanelButton() { state.panel ? togglePanel(false) : togglePanel(true, state.active ? "view" : state.tab); }
 function setTab(tab) {
   state.tab = tab;
@@ -4057,6 +4100,7 @@ function wire() {
   };
   $("#panel-refresh").onclick = () => refreshRepo(true);
   document.querySelectorAll(".tab").forEach(t => t.onclick = () => { setTab(t.dataset.tab); togglePanel(true); });
+  dragOrder($("#panel .tabs"), ".tab", "tab", "wb.tabOrder");
   $("#send-btn").onclick = send;
   $("#stop-btn").onclick = () => api().interrupt(state.active);
   $("#mic-btn").onclick = () => api().mic(!state.dictating);

@@ -114,6 +114,9 @@
 
   Desk.start({
     many: true,
+    paths: () => tabs.map(t => t.path).filter(Boolean),
+    focus(path) { const t = tabs.find(t => t.path === path); if (t) show(t); return !!t; },  // already open: go to its tab, and keep what's typed there
+    repath(old, r) { for (const t of tabs) if (t.path === old) { if (r) { t.path = r.path; t.name = r.name; t.mtime = r.mtime; } else { t.path = ""; t.dirty = true; t.clean = -1; } } drawTabs(); },
     get types() { const e = (/\.([^.]+)$/.exec(cur?.name || "") || [, "txt"])[1]; return [[e === "txt" ? "Text file" : `.${e} file`, e]]; },
     blank() { show(newTab()); },
     load(r, d) {

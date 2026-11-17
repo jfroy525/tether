@@ -89,7 +89,7 @@ def to_html(path: str) -> str:
                     ext = n.find(".//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}extent")
                     wpx = f' width="{round(int(ext.get("cx")) / 9525)}"' if ext is not None and ext.get("cx", "").isdigit() else ""
                     if src:
-                        bits.append(f'<img src="{src}"{wpx}>')
+                        bits.append(f'<img src="{src}"{wpx}{_free_at(n)}>')
             s = "".join(bits)
             if not s or pr is None:
                 return s
@@ -240,6 +240,30 @@ def _img_size(raw: bytes) -> tuple[int, int]:
     except (struct.error, IndexError):
         pass
     return 480, 320
+
+
+WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+
+
+def _px(v) -> int | None:
+    m = re.fullmatch(r"\s*(-?\d+(?:\.\d+)?)px\s*", v or "")
+    return round(float(m.group(1))) if m else None
+
+
+def _free_at(drawing) -> str:
+    """A picture Word holds in front of the text, placed from its paragraph: Folio's free picture. Any other
+    floating picture (text wrapped around it, or placed from the page) stays in the line, as before."""
+    anc = drawing.find(f"{{{WP}}}anchor")
+    if anc is None or anc.find(f"{{{WP}}}wrapNone") is None or anc.get("behindDoc") in ("1", "true"):
+        return ""
+    h, v = anc.find(f"{{{WP}}}positionH"), anc.find(f"{{{WP}}}positionV")
+    if h is None or v is None or h.get("relativeFrom") not in ("column", "margin") or v.get("relativeFrom") not in ("paragraph", "line"):
+        return ""
+    try:
+        x, y = (round(int(e.find(f"{{{WP}}}posOffset").text) / 9525) for e in (h, v))
+    except (AttributeError, TypeError, ValueError):
+        return ""
+    return f' class="free" style="left:{x}px;top:{y}px"'
 
 
 def _css(style: str) -> dict:
@@ -507,13 +531,23 @@ class _Writer(HTMLParser):
         cx, cy = pw * 9525, ph * 9525
         if cx > 5486400:
             cy, cx = round(cy * 5486400 / cx), 5486400
+        x, y = _px(css.get("left")), _px(css.get("top"))
+        free = "free" in (a.get("class") or "").split() and x is not None and y is not None
+        if free:  # in front of the text, measured from the paragraph it sits in; kept on the paper
+            x = max(-800000, min(x * 9525, max(0, 5486400 + 800000 - cx)))
+            head = (f'<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{251658240 + n}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+                    f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{x}</wp:posOffset></wp:positionH>'
+                    f'<wp:positionV relativeFrom="paragraph"><wp:posOffset>{y * 9525}</wp:posOffset></wp:positionV>'
+                    f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>')
+        else:
+            head = f'<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
         self.runs.append(
-            f'<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
+            f'<w:r><w:drawing>{head}'
             f'<wp:docPr id="{n}" name="Picture {n}"/><a:graphic xmlns:a="{A}"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
             f'<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="{n}" name="Picture {n}"/><pic:cNvPicPr/></pic:nvPicPr>'
             f'<pic:blipFill><a:blip r:embed="rImg{n}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
             f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
-            f"</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>")
+            f"</pic:pic></a:graphicData></a:graphic></wp:{'anchor' if free else 'inline'}></w:drawing></w:r>")
 
     @staticmethod
     def table(rows: list) -> str:

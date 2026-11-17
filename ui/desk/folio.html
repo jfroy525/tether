@@ -15,6 +15,19 @@
   #page hr.page-break { border-top: 1px dashed var(--text-3); position: relative; overflow: visible; margin: 2em -64px; }
   #page hr.page-break::after { content: "Page break"; position: absolute; left: 50%; top: -0.75em; transform: translateX(-50%); padding: 0 8px; background: var(--paper); color: var(--text-3); font: 11px var(--font); }
   #page table { border-collapse: collapse; width: 100%; margin: 0 0 .9em; } #page td, #page th { border: 1px solid var(--line-2); padding: 5px 8px; vertical-align: top; min-width: 40px; } #page td p { margin: 0; }
+  #page { position: relative; }
+  #page :is(p, div, h1, h2, h3, h4, blockquote, li, td, th) { position: relative; }
+  #page img { cursor: grab; -webkit-user-drag: none; }
+  #page img.free { position: absolute; max-width: none; margin: 0; z-index: 2; }
+  body.pic-drag, body.pic-drag #page, body.pic-drag #page img { cursor: grabbing; }
+  body.pic-drag #page img.free { box-shadow: 0 10px 28px rgba(0, 0, 0, .28); }
+  #pic { position: absolute; z-index: 5; display: none; pointer-events: none; border: 1.5px solid var(--accent); border-radius: 3px; }
+  #pic.on { display: block; }
+  #pic i { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--accent-fill); border: 2px solid var(--paper); pointer-events: auto; }
+  #pic i[data-h=nw] { left: -7px; top: -7px; cursor: nwse-resize; } #pic i[data-h=se] { right: -7px; bottom: -7px; cursor: nwse-resize; }
+  #pic i[data-h=ne] { right: -7px; top: -7px; cursor: nesw-resize; } #pic i[data-h=sw] { left: -7px; bottom: -7px; cursor: nesw-resize; }
+  #picbar { position: absolute; z-index: 6; display: none; gap: 4px; padding: 4px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); box-shadow: 0 6px 20px rgba(0, 0, 0, .18); white-space: nowrap; }
+  #picbar.on { display: flex; animation: drop .18s var(--soft); }
 </style>
 <div class="bar">
   <button class="name" id="doc-name"><span class="dot"></span><span class="t"></span><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button>
@@ -33,17 +46,18 @@
   <button class="ib" id="align" title="Alignment"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
   <span class="div"></span>
   <button class="ib" id="link" title="Link (⌘K)"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/></svg></button>
-  <button class="ib" id="insert" title="Insert a table, picture, line or page break"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button class="ib" id="insert" title="Insert a table, picture, line or page break. Drag a picture to move it anywhere."><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
   <span class="sp"></span>
   <button class="btn" id="ask-claude" title="Put this document, and the selected text, in your message to Claude"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span class="l">Ask Claude</span></button>
 </div>
-<div class="grow"><div id="scroll"><div id="page" contenteditable="true" spellcheck="true"></div></div></div>
+<div class="grow"><div id="scroll"><div id="page" contenteditable="true" spellcheck="true"></div><div id="pic"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div><div id="picbar"></div></div></div>
 <div class="foot"><span id="words"></span><span class="sp"></span><span id="where"></span></div>
 <script>
 (() => {
   const { $, el, esc, toast, menu, ask, touch, call } = Desk;
   const page = $("#page");
   const ex = (c, v) => { page.focus(); document.execCommand(c, false, v); after(); };
+  const px = v => Math.round(v) + "px";
 
   // ----- only plain document HTML ever goes on the page (files, pastes and Claude's edits all pass through here)
   const INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "STRIKE", "DEL", "SUB", "SUP", "CODE", "MARK", "SPAN", "FONT", "A"]);
@@ -74,7 +88,8 @@
         const st = cssOk(n, tag); if (st) e.setAttribute("style", st);
         if (tag === "FONT" && n.getAttribute("color")) e.style.color = n.getAttribute("color");
         if (tag === "A") { const h = n.getAttribute("href") || ""; if (/^(https?:|mailto:)/i.test(h)) { e.setAttribute("href", h); } else { walk(n, to); continue; } }
-        if (tag === "IMG") { const s = n.getAttribute("src") || ""; if (!/^data:image\/(png|jpeg|jpg|gif);base64,/i.test(s)) continue; e.setAttribute("src", s); const w = parseInt(n.getAttribute("width") || n.style.width); if (w > 0) e.setAttribute("width", Math.min(1200, w)); }
+        if (tag === "IMG") { const s = n.getAttribute("src") || ""; if (!/^data:image\/(png|jpeg|jpg|gif);base64,/i.test(s)) continue; e.setAttribute("src", s); const w = parseInt(n.getAttribute("width") || n.style.width); if (w > 0) e.setAttribute("width", Math.min(1200, w));
+          if (n.classList.contains("free")) { const x = parseFloat(n.style.left), y = parseFloat(n.style.top); if (isFinite(x) && isFinite(y)) { e.className = "free"; e.style.left = px(Math.max(-2000, Math.min(2000, x))); e.style.top = px(Math.max(-20000, Math.min(20000, y))); } } }
         if (tag === "HR" && n.classList.contains("page-break")) e.className = "page-break";
         if ((tag === "TD" || tag === "TH") && +n.getAttribute("colspan") > 1) e.setAttribute("colspan", +n.getAttribute("colspan"));
         walk(n, e); to.appendChild(e);
@@ -144,7 +159,7 @@
     $(".bar").after(n);
   }
   let footT = 0;
-  function after(noTouch) { if (!noTouch) touch(); clearTimeout(footT); footT = setTimeout(foot, 120); marks(); }
+  function after(noTouch) { if (!noTouch) touch(); clearTimeout(footT); footT = setTimeout(foot, 120); marks(); picUndo = null; frame(); }
   function foot() {
     const t = plain().trim(), w = t ? t.split(/\s+/).length : 0;
     $("#words").textContent = `${w.toLocaleString("en-US")} word${w === 1 ? "" : "s"} · ${t.length.toLocaleString("en-US")} characters`;
@@ -160,7 +175,7 @@
   }
   document.addEventListener("selectionchange", marks);
   page.addEventListener("input", () => after());
-  document.querySelectorAll(".ib[data-c]").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => ex(b.dataset.c); });
+  document.querySelectorAll(".ib[data-c]").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => { if (b.dataset.c === "undo" && undoPic()) return; ex(b.dataset.c); }; });
   $("#block").onchange = e => {  // a heading can't sit inside a list item: take the line out of its list first
     const b = blockOf(), li = b?.closest?.("li");
     if (li && e.target.value !== "p") { page.focus(); document.execCommand(li.parentNode.tagName === "OL" ? "insertOrderedList" : "insertUnorderedList"); }
@@ -213,6 +228,124 @@
     const html = cd.getData("text/html");
     if (html) { e.preventDefault(); ex("insertHTML", clean(html)); }
   });
+
+  // ----- pictures: click one to select it, drag it anywhere on the page, drag a corner to resize it.
+  // A free picture is tied to the paragraph it was dropped on (it's kept at the start of that paragraph and placed
+  // from its top-left corner), so it moves with that text, the way Word ties a picture "in front of text" to a line.
+  const scroll = $("#scroll"), box = $("#pic"), bar = $("#picbar");
+  const HOME = "P,DIV,H1,H2,H3,H4,BLOCKQUOTE";
+  const ICON = { move: '<svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>',
+    line: '<svg viewBox="0 0 24 24"><path d="M4 6h16M4 18h16M13 12h7"/><rect x="4" y="9.5" width="6" height="5" rx="1"/></svg>',
+    bin: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>' };
+  let pic = null, picUndo = null, dragging = false;
+  const isFree = i => i.classList.contains("free");
+  function frame() {
+    if (pic && !page.contains(pic)) pic = null;
+    box.classList.toggle("on", !!pic); bar.classList.toggle("on", !!pic && !dragging);
+    if (!pic) return;
+    const r = pic.getBoundingClientRect(), s = scroll.getBoundingClientRect(), x = r.left - s.left + scroll.scrollLeft, y = r.top - s.top + scroll.scrollTop;
+    Object.assign(box.style, { left: px(x), top: px(y), width: px(r.width), height: px(r.height) });
+    bar.style.left = px(Math.max(4, x)); bar.style.top = px(y - 44 < 4 ? y + r.height + 10 : y - 44);
+  }
+  function pick(img) {
+    pic = img || null;
+    if (pic) bar.innerHTML = `<button class="btn" data-a="mode">${isFree(pic) ? ICON.line + "<span>Put in line with text</span>" : ICON.move + "<span>Move freely</span>"}</button><button class="btn" data-a="del">${ICON.bin}<span>Delete</span></button>`;
+    frame();
+  }
+  const snap = img => ({ img, parent: img.parentNode, next: img.nextSibling, cls: img.className, left: img.style.left, top: img.style.top, width: img.getAttribute("width"), gone: null });
+  const putBack = (node, parent, next) => parent.insertBefore(node, next && next.parentNode === parent ? next : null);
+  function undoPic() {  // moving, resizing and deleting a picture change the page directly, so ⌘Z is answered here
+    const u = picUndo; if (!u) return false; picUndo = null;
+    if (u.gone) putBack(u.gone.node, u.gone.parent, u.gone.next);
+    if (page.contains(u.parent)) putBack(u.img, u.parent, u.next); else page.prepend(u.img);
+    if (u.cls) u.img.className = u.cls; else u.img.removeAttribute("class");
+    u.img.style.left = u.left; u.img.style.top = u.top; if (!u.img.getAttribute("style")) u.img.removeAttribute("style");
+    if (u.width) u.img.setAttribute("width", u.width); else u.img.removeAttribute("width");
+    pick(u.img); after(); return true;
+  }
+  const done = u => { after(); picUndo = u; };  // after() clears the undo note, so set it last
+  const where = img => { const r = img.getBoundingClientRect(), p = page.getBoundingClientRect(); return { x: r.left - p.left, y: r.top - p.top }; };
+  // put a picture at x, y on the page (measured from the page's top-left corner), tied to the paragraph at that height
+  function place(img, x, y, u) {
+    const w = img.offsetWidth || +img.getAttribute("width") || 0, h = img.offsetHeight || 0;
+    const old = img.parentNode; img.remove();
+    if (old && old !== page && old.parentNode === page && old.matches("P,DIV,H1,H2,H3,H4") && !old.textContent.trim() && !old.querySelector("img,table,hr")) { if (u) u.gone = { node: old, parent: page, next: old.nextSibling }; old.remove(); }
+    const pr = page.getBoundingClientRect();
+    x = Math.max(0, Math.min(x, pr.width - w)); y = Math.max(0, Math.min(y, Math.max(0, pr.height - h)));
+    const homes = [...page.children].filter(c => c.matches(HOME)); let home = null;
+    for (const c of homes) { if (c.getBoundingClientRect().top - pr.top <= y + 1) home = c; else break; }
+    if (!home) home = homes[0];
+    if (!home) { home = document.createElement("p"); home.innerHTML = "<br>"; page.prepend(home); }
+    home.insertBefore(img, home.firstChild); img.classList.add("free");
+    const hr = home.getBoundingClientRect();
+    img.style.left = px(x - (hr.left - pr.left)); img.style.top = px(y - (hr.top - pr.top));
+  }
+  function setFree(img) {  // lift it out of the line, leaving it exactly where it shows now
+    const r = img.getBoundingClientRect(); img.setAttribute("width", Math.round(r.width)); img.classList.add("free");
+    const op = img.offsetParent || page, o = op.getBoundingClientRect();
+    img.style.left = px(r.left - o.left - op.clientLeft); img.style.top = px(r.top - o.top - op.clientTop);
+  }
+  function setInline(img) { img.classList.remove("free"); if (!img.className) img.removeAttribute("class"); img.style.left = img.style.top = ""; if (!img.getAttribute("style")) img.removeAttribute("style"); }
+  bar.onmousedown = e => e.preventDefault();
+  bar.onclick = e => {
+    const a = e.target.closest("[data-a]")?.dataset.a; if (!a || !pic) return;
+    const u = snap(pic), img = pic;
+    if (a === "del") { img.remove(); pick(null); done(u); toast("Picture deleted. ⌘Z brings it back."); return; }
+    if (isFree(img)) setInline(img); else { setFree(img); const at = where(img); place(img, at.x, at.y, u); }
+    pick(img); done(u);
+  };
+  page.addEventListener("mousedown", e => { if (e.target.tagName === "IMG" && !e.button) e.preventDefault(); });  // no text selection or browser drag
+  page.addEventListener("pointerdown", e => {
+    const img = e.target; if (img.tagName !== "IMG" || e.button) { pick(null); return; }
+    page.focus({ preventScroll: true }); pick(img);
+    const x0 = e.clientX, y0 = e.clientY, top0 = scroll.scrollTop; let mx = x0, my = y0, u = null, raf = 0;
+    try { img.setPointerCapture(e.pointerId); } catch (err) {}
+    const shift = () => `translate(${mx - x0}px, ${my - y0 + scroll.scrollTop - top0}px)`;
+    const draw = () => { raf = 0; if (!u) return;
+      const s = scroll.getBoundingClientRect(), dy = my < s.top + 36 ? -14 : my > s.bottom - 36 ? 14 : 0;
+      if (dy) { scroll.scrollTop += dy; raf = requestAnimationFrame(draw); }  // keep scrolling while held near an edge
+      img.style.transform = shift(); frame(); };
+    const move = ev => { mx = ev.clientX; my = ev.clientY;
+      if (!u) { if (Math.hypot(mx - x0, my - y0) < 4) return; u = snap(img); dragging = true; document.body.classList.add("pic-drag"); if (!isFree(img)) setFree(img); }
+      if (!raf) raf = requestAnimationFrame(draw); };
+    const up = () => { img.removeEventListener("pointermove", move); img.removeEventListener("pointerup", up); img.removeEventListener("pointercancel", up); cancelAnimationFrame(raf);
+      if (!u) return;
+      img.style.transform = shift(); const at = where(img); img.style.transform = "";
+      dragging = false; document.body.classList.remove("pic-drag"); place(img, at.x, at.y, u); pick(img); done(u); };
+    img.addEventListener("pointermove", move); img.addEventListener("pointerup", up); img.addEventListener("pointercancel", up);
+  });
+  box.addEventListener("pointerdown", e => {
+    const hd = e.target.dataset?.h; if (!hd || !pic) return; e.preventDefault(); e.stopPropagation();
+    const img = pic, u = snap(img), x0 = e.clientX, w0 = img.offsetWidth, h0 = img.offsetHeight || 1, free = isFree(img), l0 = parseFloat(img.style.left) || 0, t0 = parseFloat(img.style.top) || 0;
+    const max = free ? page.clientWidth : (img.parentNode.clientWidth || page.clientWidth); let moved = false;
+    try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+    const move = ev => { const d = (ev.clientX - x0) * (hd[1] === "w" ? -1 : 1), w = Math.round(Math.max(24, Math.min(max, w0 + d))), h = w * h0 / w0; moved = true;
+      img.setAttribute("width", w); if (free) { if (hd[1] === "w") img.style.left = px(l0 + w0 - w); if (hd[0] === "n") img.style.top = px(t0 + h0 - h); } frame(); };
+    const up = () => { e.target.removeEventListener("pointermove", move); e.target.removeEventListener("pointerup", up); e.target.removeEventListener("pointercancel", up); if (moved) done(u); };
+    e.target.addEventListener("pointermove", move); e.target.addEventListener("pointerup", up); e.target.addEventListener("pointercancel", up);
+  });
+  box.addEventListener("mousedown", e => { if (e.target.dataset?.h) e.preventDefault(); });
+  document.addEventListener("pointerdown", e => { if (pic && !page.contains(e.target) && !box.contains(e.target) && !bar.contains(e.target)) pick(null); });
+  document.addEventListener("keydown", e => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z" && picUndo) { e.preventDefault(); e.stopPropagation(); undoPic(); return; }
+    if (!pic || e.metaKey || e.ctrlKey) return;
+    if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); e.stopPropagation(); const u = snap(pic); pic.remove(); pick(null); done(u); }
+    else if (e.key === "Escape") pick(null);
+    else if (e.key.startsWith("Arrow") && isFree(pic)) { e.preventDefault(); e.stopPropagation(); const img = pic, u = picUndo && picUndo.img === img ? picUndo : snap(img), n = e.shiftKey ? 10 : 1, at = where(img);
+      place(img, at.x + (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0), at.y + (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0)); pick(img); done(u); }
+    else if (e.key.length === 1 || e.key === "Enter") pick(null);
+  }, true);
+  // Backspace just after a free picture would delete the picture, not the text: step it aside, delete, put it back
+  page.addEventListener("beforeinput", e => {
+    if (e.inputType !== "deleteContentBackward") return; const s = getSelection(); if (!s.rangeCount || !s.isCollapsed) return;
+    const n = s.anchorNode, o = s.anchorOffset; let prev = null;
+    if (n.nodeType === 3) { if (o > 0) return; prev = n.previousSibling; } else prev = n.childNodes[o - 1];
+    if (!(prev && prev.tagName === "IMG" && isFree(prev))) return;
+    e.preventDefault(); const at = where(prev), anchor = prev.parentNode; prev.remove();
+    const r = document.createRange(); r.setStart(anchor, 0); r.collapse(true); s.removeAllRanges(); s.addRange(r);
+    document.execCommand("delete"); place(prev, at.x, at.y); after();
+  });
+  new ResizeObserver(() => frame()).observe(page);
   page.addEventListener("click", e => { if (e.target.tagName === "A" && (e.metaKey || e.ctrlKey)) call("openUrl", { url: e.target.getAttribute("href") }); });
 
   // the words on the page as plain text (innerText is empty while the Desk is on another editor, so not that)

@@ -5,6 +5,11 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Desk: move pictures, manage files, reorder tabs
+- Folio: click a picture to select it, drag it anywhere on the page, drag a corner to resize it, or nudge it with the arrow keys. ⌘Z takes the move back, and Word files keep the position.
+- Slate, Ledger and Folio: the folder button beside the file name (⇧⌘O) opens Files, with recent files and the folders you've picked files in. Open, rename, copy, move, show in Finder or move a file to the Trash from there.
+- Drag a tab in the side panel sideways to change the order of the tabs. The Desk's four editors reorder the same way.
+
 ## 2026-11-17 · The Desk: Slate, Ledger, Folio and Tack
 - A new Desk tab in the side panel, also in the toolbox, with four small editors. Slate is for text and code, Ledger for spreadsheets, Folio for documents, Tack for sticky notes.
 - Ledger opens and saves Excel files (.xlsx) and exports CSV. Folio opens and saves Word files (.docx) and exports a web page, Markdown or plain text.
