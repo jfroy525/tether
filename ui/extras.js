@@ -523,20 +523,51 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
   }
   // Under "Restarts when idle": each chat it's waiting for and why (replying, needs your answer, a job or agent
   // running). Click one to go there. The list comes from Tether's own check, the same one that decides the restart.
+  // The sentence for one thing it waits for: [before the name, after it]. No name for "You".
+  function restartWhy(c) {
+    const w = c.why || "", many = /^([2-9]|\d\d)/.test(w);
+    if (!c.sid) return ["a minute after you stop typing", ""];
+    if (w === "replying") return ["when ", " finishes replying"];
+    if (w === "needs your answer") return ["once you answer ", ""];
+    if (/job.* running$/.test(w)) return ["when ", many ? "'s jobs finish" : "'s job finishes"];
+    if (/agent.* running$/.test(w)) return ["when ", many ? "'s agents finish" : "'s agent finishes"];
+    if (w === "following up on a job") return ["when ", " finishes following up on a job"];
+    if (w === "message not sent") return ["once you send or clear your message in ", ""];
+    return ["when ", ` is done (${w})`];
+  }
   function paintRestartList(line) {
-    const box = line.querySelector(".rl-list"), list = rs.chats.slice(0, 4);
-    const key = JSON.stringify(list) + state.active;
+    const box = line.querySelector(".rl-list"), t = line.querySelector(".t"), up = rs.mode === "update";
+    const one = rs.chats.length === 1 ? rs.chats[0] : null, list = one ? [] : rs.chats.slice(0, 4);
+    const key = JSON.stringify(rs.chats.slice(0, 4)) + rs.chats.length + state.active + rs.mode + [...state.open.values()].map(S => S.title).join("|");
     if (box.dataset.k === key) return;
-    box.dataset.k = key; box.innerHTML = "";
+    box.dataset.k = key; box.innerHTML = ""; t.textContent = "";
+    line.querySelector(".rl-cancel span").textContent = up ? "Cancel update" : "Cancel restart";
+    const lead = `Tether will ${up ? "update" : "restart"} `;
+    if (!rs.chats.length) t.textContent = up ? "Updating Tether…" : "Restarting Tether…";
+    else if (one) {
+      const [a, z] = restartWhy(one);
+      t.append(lead + a);
+      if (one.sid) {
+        const b = el("b", state.open.has(one.sid) ? "go" : "");
+        b.textContent = (state.open.get(one.sid)?.title) || one.title;
+        if (state.open.has(one.sid)) { b.title = "Go to this chat"; b.onclick = () => activate(one.sid); }
+        t.append(b);
+      }
+      t.append(z + ".");
+    } else {
+      const chats = rs.chats.every(c => c.sid), b = el("b");
+      b.textContent = chats ? `${rs.chats.length} chats` : `${rs.chats.length} things`;
+      t.append(lead + (chats ? "when these " : "after these "), b, chats ? " finish." : " are done.");
+    }
     for (const c of list) {
-      const b = el(c.sid ? "button" : "div", "rl-row" + (c.why === "needs your answer" ? " warn" : "") + (c.sid ? "" : " you"), `<span class="nm"></span><span class="why"></span>`);
+      const b = el(c.sid ? "button" : "div", "rl-row" + (c.sid ? "" : " you"), `<span class="wt-dot ${c.why === "needs your answer" ? "warn" : "run"}"></span><span class="nm"></span><span class="why"></span>`);
       b.querySelector(".nm").textContent = (state.open.get(c.sid)?.title) || c.title;
       b.querySelector(".why").textContent = c.why;
       b.title = c.sid ? `${b.querySelector(".nm").textContent} · ${c.why}. Go to this chat` : `${b.querySelector(".nm").textContent} · ${c.why}`;
       b.onclick = () => { if (state.open.has(c.sid)) activate(c.sid); };
       box.appendChild(b);
     }
-    if (rs.chats.length > list.length) box.appendChild(el("div", "rl-more", `and ${rs.chats.length - list.length} more`));
+    if (!one && rs.chats.length > list.length) box.appendChild(el("div", "rl-more", `and ${rs.chats.length - list.length} more`));
   }
   function restartDialog(changed) {
     const n = busyChats().length;
@@ -579,7 +610,6 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     line.hidden = !rs.waiting;
     if (rs.waiting) {
       const up = rs.mode === "update";
-      line.querySelector(".t").textContent = k ? `${up ? "Update" : "Restart"} waits for` : up ? "Updating…" : "Restarting…";  // short: Cancel shares the line
       paintRestartList(line);
     }
     $("#restart-btn").classList.toggle("wait", rs.waiting);
@@ -649,7 +679,7 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     setInterval(pushPanel, 2000);  // approvals and job ends don't all pass through sync()
     wireSplit();
     $("#waiting-row").onclick = () => waitOpen ? closeWaiting() : openWaiting();
-    $("#restart-line .lnk-btn").onclick = cancelRestart;
+    $("#restart-line .rl-cancel").onclick = cancelRestart;
     $("#restart-btn").onclick = () => restartDialog(true);
     setTimeout(loadHandoffs, 2500);  // unsent ones from before a restart
     setInterval(loadHandoffs, 30000);

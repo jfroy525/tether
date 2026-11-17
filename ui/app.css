@@ -1330,17 +1330,19 @@ body.dark .sq-pop { box-shadow: 0 -12px 30px -14px rgba(0, 0, 0, .6); }
 .wt-acts { display: flex; flex-wrap: wrap; gap: 7px; -webkit-user-select: none; user-select: none; }
 .wt-i.done .wt-q { color: var(--text-3); margin-bottom: 0; }
 .wt-empty { color: var(--text-3); text-align: center; padding: 70px 0; }
-#restart-line { padding: 8px 14px; border-top: 1px solid var(--line); font-size: var(--fs-meta); color: var(--text-2); }
-#restart-line .rl-top { display: flex; align-items: center; gap: 8px; }
-#restart-line .lnk-btn { margin-left: auto; flex: none; }
-#restart-line .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-#restart-line .rl-list:not(:empty) { display: flex; flex-direction: column; gap: 1px; margin: 5px -6px 0; }
-.rl-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 4px 6px 4px 22px; border: 0; border-radius: 7px; background: none; font: inherit; color: var(--text-2); text-align: left; cursor: pointer; }
+/* its own block, set apart from the chat list: one sentence saying what happens and when, then Cancel */
+#restart-line { padding: 12px 14px; border-top: 1px solid var(--line-2); background: var(--pop-bg); font-size: var(--fs-meta); color: var(--text-2); }
+#restart-line .t { margin: 0 0 10px; font-size: var(--fs-ctl); line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+#restart-line .t b { font-weight: 600; }
+#restart-line .t b.go { cursor: pointer; }
+#restart-line .rl-list:not(:empty) { display: flex; flex-direction: column; gap: 1px; margin: -4px -6px 10px; }
+#restart-line .rl-cancel svg.i { width: 14px; height: 14px; }
+.rl-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 7px; background: none; font: inherit; color: var(--text-2); text-align: left; cursor: pointer; }
 .rl-row:hover { background: var(--hover); color: var(--text); }
 .rl-row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rl-row .why { flex: none; margin-left: auto; color: var(--text-3); }  /* one column on the right, so the reasons line up */
 .rl-row.warn .why { color: var(--warn); }
-.rl-more { padding: 2px 6px 0 22px; color: var(--text-3); }
+.rl-more { padding: 2px 6px 0 21px; color: var(--text-3); }
 .lnk-btn { margin-left: auto; border: 0; background: none; padding: 0; color: var(--text-3); font: inherit; cursor: pointer; flex: none; }
 .lnk-btn:hover { color: var(--text); }
 #split-btn { gap: 6px; } #split-btn svg.i { width: 15px; height: 15px; }

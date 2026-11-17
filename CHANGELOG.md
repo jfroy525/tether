@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-16 · Restart wait in plain words
+- While a restart or update waits, the sidebar says so in one sentence, such as “Tether will restart when Data Forge finishes replying.”, with a Cancel restart button.
+- With several chats waiting it lists each one and why. Click a name to go to that chat.
+
 ## 2026-11-16 · The Shelf opens when Claude shows something
 - Each time Claude shows a page the Shelf opens on it, even if you closed it earlier or another tab was open.
 - If Claude shows something while you're in another chat, the Shelf opens when you come back to that chat.
