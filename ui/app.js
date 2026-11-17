@@ -124,6 +124,7 @@ function makeSession(info) {
   S.el.appendChild(S.inner);
   S.el.hidden = true;
   S.el.addEventListener("scroll", () => {
+    if (S.el.scrollTop < 600 && S.inner.classList.contains("folded")) unfold(S);  // nearing the top: bring back the next older blocks
     if (S.glide && Math.abs(S.el.scrollTop - (S.setTop ?? -9)) < 2) return;  // a step of our own glide
     S.stick = nearBottom(S); if (!S.stick) S.glide = false;
     if (S.sid === state.active) syncJump();
@@ -134,8 +135,46 @@ function makeSession(info) {
   return S;
 }
 
+// Long chats: only the newest part is laid out and drawn. Older blocks stay in the page, folded away, and come back
+// as you scroll up (or when something scrolls to one). A resize, a split change or a streamed line then costs the
+// same in a long chat as in a short one.
+const FOLD_KEEP = 150, FOLD_SLACK = 80, FOLD_STEP = 100;
+function foldLine(S) {
+  const any = !!S.inner.querySelector(":scope > .aged");
+  let l = S.inner.querySelector(":scope > .fold-line");
+  S.inner.classList.toggle("folded", any);
+  if (any && !l) {
+    l = el("div", "note fold-line", `<a class="lnk">Show earlier messages</a>`);
+    l.querySelector("a").onclick = () => unfold(S);
+    S.inner.prepend(l);
+  } else if (!any && l) l.remove();
+}
+function foldOld(S) {
+  if (!S.stick) return;  // only while you're at the newest messages, never while you read further up
+  const kids = [...S.inner.children].filter(n => !n.classList.contains("aged") && !n.classList.contains("older-part") && !n.classList.contains("fold-line"));
+  if (kids.length <= FOLD_KEEP + FOLD_SLACK) return;
+  const fromEnd = S.el.scrollHeight - S.el.scrollTop;
+  for (const n of kids.slice(0, kids.length - FOLD_KEEP)) n.classList.add("aged");
+  foldLine(S);
+  if (!S.el.hidden) { S.el.scrollTop = S.el.scrollHeight - fromEnd; S.setTop = S.el.scrollTop; }
+}
+function unfold(S, upTo) {  // the next step of older blocks, or everything from upTo down; you stay where you were
+  const aged = [...S.inner.querySelectorAll(":scope > .aged")];
+  if (!aged.length) return;
+  const take = upTo ? aged.slice(Math.max(0, aged.indexOf(upTo) - 20)) : aged.slice(-FOLD_STEP);
+  const before = S.el.scrollHeight;
+  for (const n of take) n.classList.remove("aged");
+  foldLine(S);
+  S.el.scrollTop += S.el.scrollHeight - before; S.setTop = S.el.scrollTop;
+}
+function unfoldFor(S, node) {  // before scrolling to a block that may be folded away
+  let n = node;
+  while (n && n.parentElement !== S.inner) n = n.parentElement;
+  if (n?.classList.contains("aged")) unfold(S, n);
+}
 function add(S, node) {
   const w = S.inner.querySelector(":scope > .working, :scope > .msg-user.queued");  // the reply streams above both
+  if (!S.replaying && (S.adds = (S.adds || 0) + 1) % 40 === 0) foldOld(S);
   if (!S.replaying) node.classList.add("rise");
   if (S.playing?.size && !node.classList.contains("msg-text")) { node.classList.add("held"); (S.paced ||= []).push(node); }  // shown when the text lands
   S.inner.insertBefore(node, w || null);
@@ -638,6 +677,7 @@ function fillJobsPop(S, fresh) {
 function showAgent(S, L) {
   if (!S || !L.el?.isConnected) return;
   S.stick = false;
+  unfoldFor(S, L.el);
   L.el.scrollIntoView({ block: "center", behavior: "smooth" });
   L.el.classList.remove("flash"); void L.el.offsetWidth; L.el.classList.add("flash");
 }
@@ -647,6 +687,7 @@ function showJob(S, j) {
   j.row.querySelector(".jtail").hidden = true;
   pollJob(S, j, true);
   S.stick = false;
+  unfoldFor(S, j.row);
   j.row.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 // ---------- sub-agents: one lane each, under the call that started them ----------
@@ -1566,6 +1607,7 @@ function renderItems(S, items) {
   }
   if (items.length) add(S, el("div", "note", "— earlier messages from the saved session —"));
   S.replaying = false;
+  if (S.el.isConnected) foldOld(S);  // not for an earlier part being loaded above
   Extras.fromHistory(S);
 }
 
@@ -2155,7 +2197,7 @@ function openFromNotice(ev) {
 const PULL_FULL = 220, PULL_SETTLE = 250;
 function pullOlder(S, e) {
   const b = S.inner.querySelector(":scope > .older-part");
-  if (!b || b.loading) return;
+  if (!b || b.loading || S.inner.classList.contains("folded")) return;  // this session's own older blocks come first
   const now = performance.now();
   if (S.el.scrollTop > 0 || e.deltaY >= 0) { S.atTop = S.el.scrollTop > 0 ? 0 : S.atTop || now; if (e.deltaY > 0) setPull(b, 0); return; }
   S.atTop = S.atTop || now;

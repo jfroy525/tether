@@ -867,6 +867,11 @@ details.handoff[open] { text-align: left; }
 #chats.view-chat .note.handoff, #chats.view-chat .note.older-part { display: block; }
 
 .older-part { margin-bottom: 8px; }
+/* older blocks of a long chat, folded away until you scroll up to them (foldOld in app.js) */
+.chat-inner > .aged { display: none !important; }
+.chat-inner.folded > .older-part { display: none !important; }  /* the earlier session's line shows once this session is unfolded */
+.fold-line { margin-bottom: 8px; } .fold-line .lnk { color: var(--text-3); cursor: pointer; } .fold-line .lnk:hover { color: var(--text-2); }
+#chats.view-chat .note.fold-line { display: block; }
 .older-part .lnk { color: var(--text-3); cursor: pointer; }
 .older-part .lnk:hover { color: var(--text-2); }
 .older-part { --pull: 0px; --pull-f: 0; padding-top: var(--pull); transition: padding-top .32s var(--spring); }

@@ -202,7 +202,7 @@ const Extras = (() => {
   // Motion timer: what a change costs on this Mac, one line each in Tether.log ("[motion] …"). once(): how long the
   // change held the page, the wait for the first drawn frame, then the gaps between frames while it moves.
   // stream(): the same gaps for something that goes on as long as you drag (a pane line, the window's edge).
-  const load = () => { const on = shown(); return `${on.length} chat${on.length === 1 ? "" : "s"} shown, ${on.reduce((n, S) => n + S.inner.childElementCount, 0)} blocks`; };
+  const load = () => { const on = shown(); return `${on.length} chat${on.length === 1 ? "" : "s"} shown, ${on.reduce((n, S) => n + S.inner.childElementCount - S.inner.querySelectorAll(':scope > .aged').length, 0)} blocks laid out`; };
   const gapsLine = g => { if (!g.length) return "no frames"; const s = g.slice().sort((a, b) => a - b); return `${g.length} frames, typical ${Math.round(s[s.length >> 1])} ms, worst ${Math.round(s[s.length - 1])} ms, ${g.filter(x => x > 34).length} over 34 ms`; };
   const say = line => { try { api().motion_log(line); } catch (e) {} };
   const timer = {
