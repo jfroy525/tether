@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Recall works behind a gateway
+- With Claude Code set up to use a gateway, recall's lookups were refused at sign-in and timed out after 90 seconds. They now sign in with your Claude Code settings.
+- A refused lookup fails in a few seconds with one plain line.
+
 ## 2026-11-16 · Restart wait in plain words
 - While a restart or update waits, the sidebar says so in one sentence, such as “Tether will restart when Data Forge finishes replying.”, with a Cancel restart button.
 - With several chats waiting it lists each one and why. Click a name to go to that chat.

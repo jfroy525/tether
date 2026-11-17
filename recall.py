@@ -430,14 +430,21 @@ distinctive words likely to appear in the text: file names, identifiers, error w
 
 
 def claude_call(system: str, prompt: str, model: str = "haiku", timeout: int = 90) -> dict:
-    """One lean `claude -p` call (no tools, no MCP, no settings): about 550 tokens of overhead."""
-    cmd = [os.environ.get("ANVIL_CLAUDE", "claude"), "-p", "--model", model, "--system-prompt", system, "--tools", "",
-           "--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "",
-           "--output-format", "json"]
+    """One lean `claude -p` call (no tools, no MCP, no settings): about 550 tokens of overhead.
+    Called from inside a chat (the recall tool) it inherits the chat's gateway address (ANTHROPIC_BASE_URL) but not
+    the sign-in that goes with it, which lives in the user's settings (apiKeyHelper): the gateway then refuses it and
+    Claude Code retries for minutes. So with a gateway address in the environment, the user's settings are read too."""
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT")}
     env["PATH"] = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".local/bin"), env.get("PATH", "")])
+    env.setdefault("CLAUDE_CODE_MAX_RETRIES", "3")  # a refused call fails in seconds, not after the default ten tries
+    cmd = [os.environ.get("ANVIL_CLAUDE", "claude"), "-p", "--model", model, "--system-prompt", system, "--tools", "",
+           "--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands",
+           "--setting-sources", "user" if env.get("ANTHROPIC_BASE_URL") else "", "--output-format", "json"]
     t0 = time.time()
-    p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env, cwd=str(Path.home()))
+    try:
+        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env, cwd=str(Path.home()))
+    except subprocess.TimeoutExpired:
+        return {"text": "", "cost": 0.0, "seconds": round(time.time() - t0, 1), "error": f"The lookup's Claude call gave no answer in {timeout} seconds."}
     try:
         r = json.loads(p.stdout)
     except ValueError:
