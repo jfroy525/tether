@@ -401,11 +401,11 @@ const Extras = (() => {
       stubs.forEach((s, i) => { s.hidden = !sp.on || !sp.sides[i] || sp.sides[i] === state.active; if (!s.hidden) { box(s, R[i]); s.style.top = ""; s.style.bottom = `calc(${100 - R[i][3]}% + 12px)`; } });
       empties.forEach((e, i) => { e.hidden = !sp.on || i >= n || !!sp.sides[i]; if (!e.hidden) { box(e, R[i]); e.classList.toggle("edge-l", R[i][0] > 0); e.classList.toggle("edge-t", R[i][1] > 0); } });
       const g = sp.geo[sp.layout];
-      grips.x.hidden = !sp.on; grips.x2.hidden = !sp.on || sp.layout !== "3"; grips.y.hidden = !sp.on || g.y == null;
+      grips.x.hidden = !sp.on; grips.x2.hidden = !sp.on || sp.layout !== "3"; grips.y.hidden = grips.c.hidden = !sp.on || g.y == null;
       if (!sp.on) { closePops(); place(); return; }
       grips.x.style.left = `calc(${g.x}% - 4px)`;
       if (g.x2) grips.x2.style.left = `calc(${g.x2}% - 4px)`;
-      if (g.y != null) { grips.y.style.top = `calc(${g.y}% - 4px)`; grips.y.style.left = sp.layout === "1+2" ? g.x + "%" : "0"; }
+      if (g.y != null) { grips.y.style.top = `calc(${g.y}% - 4px)`; grips.y.style.left = sp.layout === "1+2" ? g.x + "%" : "0"; grips.c.style.left = `calc(${g.x}% - 10px)`; grips.c.style.top = `calc(${g.y}% - 10px)`; }
       sp.sides.forEach((id, i) => {
         const S = id && state.open.get(id);
         if (!S) return;
@@ -599,6 +599,24 @@ const Extras = (() => {
       chats.appendChild(g); grips[key] = g;
     };
     grip("x"); grip("x2"); grip("y", true);
+    {  // where an up-down line meets a left-right one: drag it any way to move both at once
+      const g = el("div", "split-grip c"); g.hidden = true; g.title = "Drag to resize both ways";
+      g.onmousedown = e => {
+        e.preventDefault(); e.stopPropagation();
+        const r = chats.getBoundingClientRect(), lim = v => Math.max(25, Math.min(75, v));
+        let raf = 0;
+        const move = ev => {
+          const G = sp.geo[sp.layout];
+          G.x = lim(((ev.clientX - r.left) / r.width) * 100); G.y = lim(((ev.clientY - r.top) / r.height) * 100);
+          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); });
+        };
+        const up = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag-c"); };
+        document.body.classList.add("split-drag-c");
+        document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+      };
+      g.ondblclick = () => morph(() => { Object.assign(sp.geo[sp.layout], { x: GEO[sp.layout].x, y: GEO[sp.layout].y }); split.layout(); });
+      chats.appendChild(g); grips.c = g;
+    }
     const dropMark = el("div", "split-drop"); dropMark.hidden = true; chats.appendChild(dropMark);
     chats.addEventListener("mousedown", e => {  // a click anywhere in another pane brings that chat in front
       if (!sp.on) return;

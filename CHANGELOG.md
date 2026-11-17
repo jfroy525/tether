@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Resize split panes both ways at once
+- In Four in a grid and One large with two stacked, drag the dot where the lines meet to change widths and heights together. Double-click it to reset.
+
 ## 2026-11-17 · Waiting on you: click the top to open Tether
 - A click on the panel's top line brings Tether forward on the first chat that's waiting. A click on a chat's name line opens that chat.
 - The fold button is a minimize line now, not an up arrow.
