@@ -199,6 +199,33 @@ const Extras = (() => {
   let moving = false, anims = [];
   const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   const shown = () => [...state.open.values()].filter(S => !S.el.hidden);
+  // Motion timer: what a change costs on this Mac, one line each in Tether.log ("[motion] …"). once(): how long the
+  // change held the page, the wait for the first drawn frame, then the gaps between frames while it moves.
+  // stream(): the same gaps for something that goes on as long as you drag (a pane line, the window's edge).
+  const load = () => { const on = shown(); return `${on.length} chat${on.length === 1 ? "" : "s"} shown, ${on.reduce((n, S) => n + S.inner.childElementCount, 0)} blocks`; };
+  const gapsLine = g => { if (!g.length) return "no frames"; const s = g.slice().sort((a, b) => a - b); return `${g.length} frames, typical ${Math.round(s[s.length >> 1])} ms, worst ${Math.round(s[s.length - 1])} ms, ${g.filter(x => x > 34).length} over 34 ms`; };
+  const say = line => { try { api().motion_log(line); } catch (e) {} };
+  const timer = {
+    once(label, ms = 700, t0 = performance.now()) {
+      return () => {  // call when the change has been made
+        const held = performance.now() - t0, gaps = [];
+        let last = 0, first = 0;
+        const tick = () => {
+          const now = performance.now();
+          if (!last) first = now - t0 - held; else gaps.push(now - last);
+          last = now;
+          if (now - t0 - held < ms) requestAnimationFrame(tick);
+          else say(`${label} · ${load()} · held ${Math.round(held)} ms, first frame +${Math.round(first)} ms · ${gapsLine(gaps)}`);
+        };
+        requestAnimationFrame(tick);
+      };
+    },
+    stream(label) {
+      const gaps = []; let last = 0;
+      return { frame() { const now = performance.now(); if (last && now - last < 250) gaps.push(now - last); last = now; },
+               end() { if (gaps.length > 2) say(`${label} · ${load()} · ${gapsLine(gaps)}`); } };
+    },
+  };
   // Each animation is made holding its first frame, and starts only once that frame has been drawn. Laying out a
   // long chat for a new pane can take longer than the motion itself; started straight away, it would be over
   // before anything showed.
@@ -218,7 +245,7 @@ const Extras = (() => {
     const chats = $("#chats"), comp = $("#composer");
     if (moving || still() || !chats || document.body.classList.contains("mini")) { moving = true; try { return fn(); } finally { moving = false; } }
     anims.slice().forEach(a => a.finish());
-    const wasOn = sp.on, c0 = chats.getBoundingClientRect();
+    const wasOn = sp.on, c0 = chats.getBoundingClientRect(), from = sp.on ? sp.layout : "1", began = performance.now();
     const textLeft = S => S.inner.getBoundingClientRect().left + parseFloat(getComputedStyle(S.inner).paddingLeft || 0);
     const before = new Map(shown().map(S => [S, { box: S.el.getBoundingClientRect(), text: textLeft(S), inner: S.inner.getBoundingClientRect().top,
       top: S.el.scrollTop, end: S.el.scrollHeight - S.el.scrollTop - S.el.clientHeight < 60,
@@ -231,6 +258,8 @@ const Extras = (() => {
     try { fn(); } finally { moving = false; }
     const now = shown(), c = chats.getBoundingClientRect();
     if (!wasOn && !sp.on) return;  // plain switch between chats: Tether's own fade does that
+    const to = sp.on ? sp.layout : "1", stop = timer.once(from === to ? `split ${to}, pane change` : `split ${from} to ${to}`, 700, began);
+    queueMicrotask(stop);  // after the animations below are set up
     chats.style.overflow = "hidden";
     let left = 0;
     const end = () => { if (--left <= 0) chats.style.overflow = ""; };
@@ -588,10 +617,11 @@ const Extras = (() => {
           const G = sp.geo[sp.layout], p = horiz ? ((ev.clientY - r.top) / r.height) * 100 : ((ev.clientX - r.left) / r.width) * 100;
           const lo = key === "x2" ? G.x + 18 : sp.layout === "3" ? 18 : 25, hi = key === "x" && G.x2 ? G.x2 - 18 : sp.layout === "3" ? 82 : 75;
           G[key] = Math.max(lo, Math.min(hi, p));
-          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); });
+          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); tm.frame(); });
         };
         let raf = 0;
-        const up = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
+        const tm = timer.stream(`drag a pane line, split ${sp.layout}`);
+        const up = () => { tm.end(); if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
         document.body.classList.add(horiz ? "split-drag-h" : "split-drag");
         document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
       };
@@ -599,6 +629,16 @@ const Extras = (() => {
       chats.appendChild(g); grips[key] = g;
     };
     grip("x"); grip("x2"); grip("y", true);
+    {  // timing only: the window changing size (dragging its edge, or the mini window switch)
+      let rz = null, quiet = 0;
+      addEventListener("resize", () => {
+        if (!rz) rz = timer.stream(document.body.classList.contains("mini-go") ? "mini window switch" : sp.on ? `window resize, split ${sp.layout}` : "window resize, one chat");
+        const cur = rz;
+        requestAnimationFrame(() => cur.frame());
+        clearTimeout(quiet);
+        quiet = setTimeout(() => { cur.end(); rz = null; }, 400);
+      });
+    }
     {  // where an up-down line meets a left-right one: drag it any way to move both at once
       const g = el("div", "split-grip c"); g.hidden = true; g.title = "Drag to resize both ways";
       g.onmousedown = e => {
@@ -608,9 +648,10 @@ const Extras = (() => {
         const move = ev => {
           const G = sp.geo[sp.layout];
           G.x = lim(((ev.clientX - r.left) / r.width) * 100); G.y = lim(((ev.clientY - r.top) / r.height) * 100);
-          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); });
+          if (!raf) raf = requestAnimationFrame(() => { raf = 0; split.layout(); tm.frame(); });
         };
-        const up = () => { if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag-c"); };
+        const tm = timer.stream(`drag where the lines meet, split ${sp.layout}`);
+        const up = () => { tm.end(); if (raf) { cancelAnimationFrame(raf); raf = 0; split.layout(); } document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag-c"); };
         document.body.classList.add("split-drag-c");
         document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
       };
@@ -1043,5 +1084,5 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     sync();
   }
 
-  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog, panelAct, changed: () => changed, restartWaiting: () => rs.waiting };
+  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog, panelAct, changed: () => changed, restartWaiting: () => rs.waiting, timer };
 })();

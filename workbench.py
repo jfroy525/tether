@@ -2164,6 +2164,11 @@ class Api:
         AppHelper.callAfter(front)
 
     # ---------- mini window ----------
+    def motion_log(self, line):
+        """One line from the page's motion timer (a split change, a pane drag, the mini window) into Tether.log."""
+        print(f"[motion] {time.strftime('%H:%M:%S')} {str(line)[:300]}", file=sys.stderr, flush=True)
+        return True
+
     def set_mini(self, on):
         """Shrink to the mini window or grow back. The page has already started folding its panes; mini.py moves the window."""
         import AppKit

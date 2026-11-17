@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Motion timer in the log
+- Split changes, pane drags, window resizes and the mini window switch each write one `[motion]` line to Tether.log with how long the change took and how smooth the frames were. Nothing changes on screen.
+
 ## 2026-11-17 · Resize split panes both ways at once
 - In Four in a grid and One large with two stacked, drag the dot where the lines meet to change widths and heights together. Double-click it to reset.
 
