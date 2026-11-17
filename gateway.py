@@ -123,6 +123,44 @@ def maker(mid: str) -> str:
     return MAKERS.get(org.lower(), org[:1].upper() + org[1:])
 
 
+def _kind(mid: str):
+    """What a model is apart from its version, its version, and a date stamp if the name ends in one:
+    'azure/gpt-5.4-mini' -> (('gpt', 'mini'), (5, 4), ''); 'DeepSeek-V4.1-Flash-1017' -> (('deepseek', 'v', 'flash'), (4, 1), '1017').
+    A name with no version number (gpt-oss-120b) has version None and is never counted as older."""
+    kind, ver, date = [], None, ""
+    for w in re.split(r"[-_\s]+", mid.split("/")[-1]):
+        if not w:
+            continue
+        m = re.fullmatch(r"([A-Za-z]{0,2})(\d+(?:\.\d+)*)", w)
+        if m and ver is not None and not m.group(1) and len(w) in (4, 6, 8) and "." not in w:
+            date = w  # 0731, 1017: a dated copy of the same model
+        elif m and ver is None and not (not m.group(1) and len(w) >= 4 and "." not in w):
+            ver = tuple(int(x) for x in m.group(2).split("."))
+            if m.group(1):
+                kind.append(m.group(1).lower())
+        else:
+            kind.append(w.lower())
+    return tuple(kind), ver, date
+
+
+def older(ids) -> set:
+    """The ids that a newer model of the same maker and kind replaces: a lower version, or a dated copy when
+    the same version is listed without a date (or with a later one)."""
+    best = {}
+    rows = [(mid, maker(mid), *_kind(mid)) for mid in ids]
+    for mid, mk, kind, ver, date in rows:
+        if ver is None:
+            continue
+        rank = (ver + (0,) * 4)[:4], (1, "") if not date else (0, date)
+        if rank > best.get((mk, kind), ((), (0, ""))):
+            best[(mk, kind)] = rank
+    out = set()
+    for mid, mk, kind, ver, date in rows:
+        if ver is not None and ((ver + (0,) * 4)[:4], (1, "") if not date else (0, date)) < best[(mk, kind)]:
+            out.add(mid)
+    return out
+
+
 def where(mid: str) -> str:
     first = mid.split("/")[0]
     return HOSTS.get(first.lower(), first[:1].upper() + first[1:])
@@ -162,6 +200,7 @@ class OtherModels:
         if not gw:
             return {"on": False, "models": []}
         out = []
+        old = older([mid for mid, m in self.data["models"].items() if m.get("ok")]) - set(self.data.get("custom") or [])
         for mid, m in self.data["models"].items():
             if not m.get("ok"):
                 continue
@@ -174,7 +213,7 @@ class OtherModels:
             if m.get("context"):
                 c = m["context"]
                 bits.append((f"{c / 1e6:.2f}".rstrip("0").rstrip(".") + "M" if c >= 1e6 else f"{round(c / 1000)}k") + " context")
-            out.append({"value": mid, "displayName": name(mid), "group": maker(mid), "description": " · ".join(bits)})
+            out.append({"value": mid, "displayName": name(mid), "group": maker(mid), "description": " · ".join(bits), "older": mid in old})
         out.sort(key=lambda x: (x["group"].lower(), x["displayName"].lower()))
         n_checked = sum(1 for m in self.data["models"].values() if m.get("checked"))
         return {"on": True, "host": host(), "models": out, "checked_at": self.data.get("checked_at"),

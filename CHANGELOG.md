@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Newest models only
+- Settings › Sessions › Newest models only (off to start) shortens the model menu for other companies to the newest version of each kind of model: GPT 5.4 Mini hides GPT 5 Mini, and dated copies of a model go.
+- "Show all" under a company brings the rest back. The model a chat is using, and models you added yourself, always show.
+
 ## 2026-11-17 · Chats keep their place when resized
 - Resizing a split pane or the window no longer leaves a chat above its newest messages: a chat at the bottom stays at the bottom.
 - A chat you've scrolled up in keeps the message at the top of the view where it was.

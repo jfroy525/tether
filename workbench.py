@@ -56,6 +56,7 @@ DEFAULTS = {
     "panel_w": {},            # side panel width per tab, from dragging its edge ({"view": 640})
     "new_folder_in": "",      # where New folder… last made one; "" = not used yet
     "effort": "",
+    "newest_models": False,   # model menu: for other companies, only the newest version of each kind of model
     "show_thinking": True,
     "keep_notes": True,
     "auto_fresh": 200000,     # start a fresh session (notes + recall carry over) once context passes this; 0 = never       # long sessions get running notes (Haiku), used by recall and handoffs

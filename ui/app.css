@@ -1458,6 +1458,7 @@ body.pin-dragging .sess .acts { display: none !important; }
 .run-menu .it.co .a { font-weight: 600; }
 .run-menu .it.co .n { margin-left: auto; color: var(--text-3); font-size: var(--fs-meta); }
 .run-menu .co-list { margin: 0 0 4px; }
+.run-menu .it.co-more { padding-top: 4px; padding-bottom: 4px; } .run-menu .it.co-more .b { color: var(--text-3); } .run-menu .it.co-more:hover .b { color: var(--text-2); }
 .run-menu .co + .co-list + .co, .run-menu .co-list:not([hidden]) + .co { margin-top: 2px; }
 .modal-p.om-err { color: var(--danger); margin-top: -6px; }
 /* change log: the update box and Settings › Updates › Change log */

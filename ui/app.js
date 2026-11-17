@@ -2463,10 +2463,16 @@ function renderRunMenu() {
   const grouped = companies.length > 1 || state.other?.on;
   state.coOpen ||= {};
   const coOpen = (name, os) => state.coOpen[name] ?? (name === "Anthropic" || os.some(o => o.value === cur));
+  // Settings › Sessions › Newest models only: a newer version of the same kind hides the older one behind "Show all"
+  state.coAll ||= {};
+  const newest = !!state.settings.newest_models;
+  const isOld = o => newest && o.dataset.older != null && o.value !== cur;
   const models = !grouped ? mOpts.map(o => opt("#model-sel", o)).join("") : `<div class="run-models">${companies.map(([name, os]) => {
-    const open = coOpen(name, os), using = os.some(o => o.value === cur);
+    const open = coOpen(name, os), using = os.some(o => o.value === cur), nOld = os.filter(isOld).length, all = !!state.coAll[name];
+    const shown = all ? os : os.filter(o => !isOld(o));
+    const more = nOld ? `<div class="it co-more" data-co-all="${esc(name)}"><span class="ck"></span><span class="txt"><span class="b">${all ? "Show newest only" : `Show all ${os.length}`}</span></span></div>` : "";
     return `<div class="it co${open ? " open" : ""}" data-co="${esc(name)}"><span class="chev">›</span><span class="txt"><span class="a">${esc(name)}</span></span>`
-      + `<span class="n">${using && !open ? "in use · " : ""}${os.length}</span></div><div class="co-list"${open ? "" : " hidden"}>${os.map(o => opt("#model-sel", o)).join("")}</div>`;
+      + `<span class="n">${using && !open ? "in use · " : ""}${shown.length}</span></div><div class="co-list"${open ? "" : " hidden"}>${shown.map(o => opt("#model-sel", o)).join("")}${more}</div>`;
   }).join("")}${state.other?.on ? `<div class="it" data-other-add><span class="ck"></span><span class="txt"><span class="a">Other model…</span><span class="b">Type a model ID; Tether checks it first</span></span></div>` : ""}</div>`;
   m.innerHTML = `<div class="run-cols"><div class="run-col"><div class="hd">Model</div>${models}</div>
     <div class="run-col"><div class="hd">Permissions<span class="kbd">⇧Tab</span></div>
@@ -2481,6 +2487,12 @@ function renderRunMenu() {
     const list = m.querySelector(".run-models"), top = list.scrollTop;
     state.coOpen[n.dataset.co] = !n.classList.contains("open"); renderRunMenu();
     m.querySelector(".run-models").scrollTop = top;  // opening a company doesn't jump the list
+  });
+  m.querySelectorAll("[data-co-all]").forEach(n => n.onclick = e => {
+    e.stopPropagation();
+    const top = m.querySelector(".run-models").scrollTop;
+    state.coAll[n.dataset.coAll] = !state.coAll[n.dataset.coAll]; renderRunMenu();
+    m.querySelector(".run-models").scrollTop = top;
   });
   const add = m.querySelector("[data-other-add]");
   if (add) add.onclick = e => { e.stopPropagation(); m.hidden = true; otherModelDialog(); };
@@ -2943,7 +2955,7 @@ async function fillModels() {
   if (!state.models.length) state.models = await api().models();
   if (!state.other) state.other = await api().other_models().catch(() => null);
   const sel = $("#model-sel");
-  const option = m => `<option value="${esc(m.value)}" title="${esc(m.description || "")}">${esc(m.displayName || m.value)}</option>`;
+  const option = m => `<option value="${esc(m.value)}" title="${esc(m.description || "")}"${m.older ? " data-older" : ""}>${esc(m.displayName || m.value)}</option>`;
   const groups = {};  // non-Claude models a gateway serves (gateway.py), by maker
   for (const m of state.other?.models || []) (groups[m.group] ||= []).push(m);
   sel.innerHTML = `<option value="">Default model</option>` + state.models.filter(m => m.value !== "default").map(option).join("")
@@ -3821,10 +3833,11 @@ async function settingsDialog() {
     ${sec("Sessions", row("Keep notes for long sessions", sw("keep_notes", s.keep_notes !== false), "Haiku keeps running notes once a session gets long (about a cent per update). Recall and Continue in a new session use them")
       + row("Start fresh automatically", `<select data-k="auto_fresh">${opts([["0", "Never (compact instead)"], ["150000", "At 150k tokens"], ["200000", "At 200k tokens (recommended)"], ["300000", "At 300k tokens"]], String(s.auto_fresh ?? 200000))}</select>`, "When a conversation gets long, Tether continues it in a fresh session with its notes and recall into the old one. Cheaper than letting it grow; nothing for you to do")
       + row("Model for new chats", `<select data-k="model">${opts([["", "Claude Code default"]], s.model)}${state.other?.models?.length ? `<optgroup label="Anthropic">` : ""}${opts((state.models || []).filter(m => m.value !== "default").map(m => [m.value, m.displayName || m.value]), s.model)}${state.other?.models?.length ? "</optgroup>" : ""}${
-        Object.entries((state.other?.models || []).reduce((g, m) => ((g[m.group] ||= []).push([m.value, m.displayName]), g), {})).map(([g, ps]) => `<optgroup label="${esc(g)}">${opts(ps, s.model)}</optgroup>`).join("")}</select>`,
+        Object.entries((state.other?.models || []).filter(m => !(s.newest_models && m.older && m.value !== s.model)).reduce((g, m) => ((g[m.group] ||= []).push([m.value, m.displayName]), g), {})).map(([g, ps]) => `<optgroup label="${esc(g)}">${opts(ps, s.model)}</optgroup>`).join("")}</select>`,
       "The model picker by the message box changes only the chat you're in")
       + (state.other?.on ? row("Other models", `<span class="upd-row"><span id="om-line">${esc(omLine())}</span><button class="btn ghost small" id="om-check">Check now</button></span>`,
         `Non-Claude models ${state.other.host || "your gateway"} serves. Tether reads its list once a day (free) and sends one tiny request to each new model (a third of a cent at most); failures cost nothing. Check now rechecks all of them, about 10 cents`) : "")
+      + (state.other?.on ? row("Newest models only", sw("newest_models", !!s.newest_models), "For other companies, the model menu lists the newest version of each kind of model (GPT 5.4 Mini hides GPT 5 Mini). Show all in the menu brings back the rest") : "")
       + row("Effort for new chats", `<select data-k="effort">${opts([["", "Claude Code default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]], s.effort)}</select>`)
       + row("Start new sessions in", `<select data-k="perm_mode">${opts([["", "Claude Code default"], ...[...$("#mode-sel").options].map(o => [o.value, o.text])], s.perm_mode)}</select>`,
       "Also applies when you open a past session. The mode menu by the message box changes only the session you're in"))}
