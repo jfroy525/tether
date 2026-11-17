@@ -101,7 +101,7 @@ const Extras = (() => {
   // ---------- Waiting on you ----------
   // Every open chat that needs you: an approval, a question at the end of a reply, a reply you haven't seen, a failed job.
   let waitOpen = false, waitKey = "", sent = [];
-  function waitingItems(all) {  // the chats on screen (the one in front, or both sides of a split) are left out: you can see them
+  function waitingItems(all) {  // the chats on screen (the one in front, or every pane of a split) are left out: you can see them
     const out = [], here = all ? new Set() : new Set(sp.on ? sp.sides : [state.active]);  // all: for the floating panel, shown while Tether is away
     for (const S of state.open.values()) {
       if (here.has(S.sid)) continue;
@@ -163,10 +163,33 @@ const Extras = (() => {
   function openWaiting() { waitOpen = true; waitKey = ""; $("#main").classList.add("waiting"); $("#side").classList.add("waiting"); $("#waiting").hidden = false; renderWaiting(true); sync(); }
   function closeWaiting() { if (!waitOpen) return false; waitOpen = false; $("#main").classList.remove("waiting"); $("#side").classList.remove("waiting"); $("#waiting").hidden = true; sync(); return true; }
 
-  // ---------- two chats side by side ----------
-  // Both chats stay live. The one you click is the chat in front: the message box, approvals and the Running note
-  // move under it, and the other side shows a quiet box that takes you there.
-  const sp = { on: false, sides: [], pct: 50 };
+  // ---------- up to four chats in a split ----------
+  // Every chat in the split stays live. The one you click is the chat in front: the message box, approvals and the
+  // Running note move under it, and each other pane shows a quiet box that takes you there. Layouts: two or three
+  // side by side, one large with two stacked, four in a grid. A pane can be empty (after ✕, or when its chat closes);
+  // it then lists chats to put there.
+  const LAYOUTS = {
+    "2": { n: 2, name: "Two side by side", pic: `<path d="M12 1v14"/>` },
+    "3": { n: 3, name: "Three side by side", pic: `<path d="M8.3 1v14M15.7 1v14"/>` },
+    "1+2": { n: 3, name: "One large, two stacked", pic: `<path d="M13 1v14M13 8h10"/>` },
+    "4": { n: 4, name: "Four in a grid", pic: `<path d="M12 1v14M1 8h22"/>` },
+  };
+  const GEO = { "2": { x: 50 }, "3": { x: 33.34, x2: 66.67 }, "1+2": { x: 56, y: 50 }, "4": { x: 50, y: 50 } };
+  const PIC = d => `<svg class="lp" viewBox="0 0 24 16"><rect x="1" y="1" width="22" height="14" rx="2.5"/>${d || ""}</svg>`;
+  const sp = { on: false, layout: "2", sides: [], geo: JSON.parse(JSON.stringify(GEO)), mem: {}, target: null };
+  const THREE_MIN = 820;  // three columns narrower than this are too thin to read
+  // each pane's box in the chat area, in percent: [left, top, right, bottom]
+  function paneRects(k = sp.layout) {
+    const g = sp.geo[k];
+    return k === "3" ? [[0, 0, g.x, 100], [g.x, 0, g.x2, 100], [g.x2, 0, 100, 100]]
+      : k === "1+2" ? [[0, 0, g.x, 100], [g.x, 0, 100, g.y], [g.x, g.y, 100, 100]]
+      : k === "4" ? [[0, 0, g.x, g.y], [g.x, 0, 100, g.y], [0, g.y, g.x, 100], [g.x, g.y, 100, 100]]
+      : [[0, 0, g.x, 100], [g.x, 0, 100, 100]];
+  }
+  const box = (n, [l, t, r, b]) => Object.assign(n.style, { left: l + "%", top: t + "%", right: 100 - r + "%", bottom: 100 - b + "%" });
+  const unbox = n => ["left", "top", "right", "bottom"].forEach(k => n.style[k] = "");
+  const real = () => sp.sides.filter(id => id && state.open.has(id));
+  const byRecent = () => [...state.open.values()].sort((a, b) => b.lastActive - a.lastActive);
 
   // Motion: whatever changes the split runs inside morph(). It measures where things were, makes the change, then
   // plays the difference: a chat that comes in slides from its own edge, the one that stays glides its text to the
@@ -187,8 +210,11 @@ const Extras = (() => {
     anims.slice().forEach(a => a.finish());
     const wasOn = sp.on, c0 = chats.getBoundingClientRect();
     const textLeft = S => S.inner.getBoundingClientRect().left + parseFloat(getComputedStyle(S.inner).paddingLeft || 0);
-    const before = new Map(shown().map(S => [S, { box: S.el.getBoundingClientRect(), text: textLeft(S),
-      top: S.el.scrollTop, pad: getComputedStyle(S.el).paddingTop, ipl: getComputedStyle(S.inner).paddingLeft, ipr: getComputedStyle(S.inner).paddingRight }]));
+    const before = new Map(shown().map(S => [S, { box: S.el.getBoundingClientRect(), text: textLeft(S), inner: S.inner.getBoundingClientRect().top,
+      top: S.el.scrollTop, end: S.el.scrollHeight - S.el.scrollTop - S.el.clientHeight < 60,
+      pad: getComputedStyle(S.el).paddingTop, ipl: getComputedStyle(S.inner).paddingLeft, ipr: getComputedStyle(S.inner).paddingRight }]));
+    const parts = () => [...chats.querySelectorAll(".split-head, .split-stub, .split-empty, .split-grip")].filter(n => !n.hidden);
+    const pb = new Map(parts().map(n => [n, n.getBoundingClientRect()]));
     const cbox = () => comp && !comp.hidden && comp.querySelector(".composer-box");
     const k0 = cbox() ? cbox().getBoundingClientRect() : null;
     moving = true;
@@ -199,48 +225,97 @@ const Extras = (() => {
     let left = 0;
     const end = () => { if (--left <= 0) chats.style.overflow = ""; };
     const go = (node, frames, opts, done) => { left++; play(node, frames, opts, () => { done && done(); end(); }); };
+    const same = (a, b) => Math.abs(a.left - b.left) < 2 && Math.abs(a.top - b.top) < 2 && Math.abs(a.right - b.right) < 2 && Math.abs(a.bottom - b.bottom) < 2;
+    const holds = (r, x, y) => x > r.left && x < r.right && y > r.top && y < r.bottom;
+    // which way a pane slides: [x, y] pointing away from the box that sits next to it (the one giving it room, or taking its room)
+    const awayFrom = (r, o) => !o ? [(r.left + r.right) / 2 < (c.left + c.right) / 2 - 1 ? -1 : 1, 0]
+      : o.bottom <= r.top + 2 ? [0, 1] : o.top >= r.bottom - 2 ? [0, -1] : o.right <= r.left + 2 ? [1, 0] : o.left >= r.right - 2 ? [-1, 0]
+      : [(r.left + r.right) / 2 < (c.left + c.right) / 2 - 1 ? -1 : 1, 0];
+    const nowBox = new Map(now.map(S => [S, S.el.getBoundingClientRect()]));
     for (const S of now) {
-      const b = before.get(S);
-      if (b) {  // stays: the chat glides so its text starts where it was, and opens up from its old edges as it grows
-        const nb = S.el.getBoundingClientRect(), dx = b.text - textLeft(S);
-        if (Math.abs(dx) > 1) {
-          const l = Math.max(0, b.box.left - (nb.left + dx)), r = Math.max(0, nb.right + dx - b.box.right);
-          go(S.el, [{ transform: `translateX(${dx}px)`, clipPath: `inset(0 ${r}px 0 ${l}px)` }, { transform: "none", clipPath: "inset(0 0 0 0)" }]);
-        }
-      } else if (wasOn && sp.on) {  // a chat from the sidebar takes a side: it settles in place
-        go(S.el, [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { duration: 280 });
-      } else {  // the new side slides in from its own edge
-        const r = S.el.getBoundingClientRect(), dir = S.el.classList.contains("split-a") ? -1 : 1;
-        go(S.el, [{ transform: `translateX(${dir * r.width}px)`, opacity: .35 }, { transform: "none", opacity: 1 }]);
+      const b = before.get(S), nb = nowBox.get(S);
+      if (b) {  // stays: it glides from where it was, its words holding their place, and opens up from its old edges as it grows
+        const sameW = Math.abs(nb.width - b.box.width) < 2;
+        if (b.end && !sameW) S.el.scrollTop = S.el.scrollHeight;  // its lines re-wrapped: keep it on the newest ones
+        const dx = sameW ? b.box.left - nb.left : b.text - textLeft(S);
+        const dy = sameW ? b.inner - S.inner.getBoundingClientRect().top : b.box.top - nb.top;
+        const l = Math.max(0, b.box.left - (nb.left + dx)), r = Math.max(0, nb.right + dx - b.box.right);
+        const t = Math.max(0, b.box.top - (nb.top + dy)), u = Math.max(0, nb.bottom + dy - b.box.bottom);
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || l > 1 || r > 1 || t > 1 || u > 1)
+          go(S.el, [{ transform: `translate(${dx}px, ${dy}px)`, clipPath: `inset(${t}px ${r}px ${u}px ${l}px)` }, { transform: "none", clipPath: "inset(0 0 0 0)" }]);
+        if (b.end && sameW && nb.height < b.box.height - 2) S.el.scrollTo({ top: S.el.scrollHeight, behavior: "smooth" });  // it got shorter: ease down to the newest lines
+        continue;
+      }
+      const cx = (nb.left + nb.right) / 2, cy = (nb.top + nb.bottom) / 2;
+      if ([...before.values()].some(o => same(o.box, nb))) {  // it takes a pane another chat had: it settles in place
+        go(S.el, [{ opacity: 0, transform: "translateY(12px) scale(.985)" }, { opacity: 1, transform: "none" }], { duration: 300 });
+      } else {  // a new pane slides in from the far side of the chat that made room for it
+        const host = now.find(O => before.has(O) && holds(before.get(O).box, cx, cy));
+        const [ux, uy] = awayFrom(nb, host ? nowBox.get(host) : null);
+        S.el.style.zIndex = 2;
+        go(S.el, [{ transform: `translate(${ux * nb.width}px, ${uy * nb.height}px)`, opacity: .35 }, { transform: "none", opacity: 1 }], null, () => { S.el.style.zIndex = ""; });
       }
     }
-    if (wasOn && !sp.on) for (const [S, b] of before) {  // leaves: it slides out the way it came, then hides
+    if (wasOn) for (const [S, b] of before) {  // leaves: it slides out the way it came, then hides
       if (now.includes(S) || !state.open.has(S.sid)) continue;
-      const dir = (b.box.left + b.box.right) / 2 < (c0.left + c0.right) / 2 ? -1 : 1;
-      Object.assign(S.el.style, { left: b.box.left - c0.left + "px", right: c0.right - b.box.right + "px", paddingTop: b.pad, zIndex: 2 });
+      if (now.some(O => !before.has(O) && same(nowBox.get(O), b.box))) continue;  // another chat took its pane: that one settles over it
+      const cx = (b.box.left + b.box.right) / 2, cy = (b.box.top + b.box.bottom) / 2;
+      const taker = now.find(O => before.has(O) && holds(nowBox.get(O), cx, cy));  // the chat that grows into its room
+      const gone = !taker && sp.on;  // its pane is still there, empty: it fades where it is
+      const [ux, uy] = gone ? [0, 0] : awayFrom(b.box, taker ? before.get(taker).box : null);
+      Object.assign(S.el.style, { left: b.box.left - c0.left + "px", right: c0.right - b.box.right + "px", top: b.box.top - c0.top + "px", bottom: c0.bottom - b.box.bottom + "px", paddingTop: b.pad, zIndex: 1 });
       Object.assign(S.inner.style, { paddingLeft: b.ipl, paddingRight: b.ipr });
       S.el.classList.add("split-leave");
       S.el.scrollTop = b.top;
-      go(S.el, [{ transform: "none", opacity: 1 }, { transform: `translateX(${dir * b.box.width}px)`, opacity: .35 }], { duration: 360 }, () => {
+      go(S.el, gone ? [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(.985)" }]
+        : [{ transform: "none", opacity: 1 }, { transform: `translate(${ux * b.box.width}px, ${uy * b.box.height}px)`, opacity: .35 }], { duration: gone ? 220 : 360 }, () => {
         S.el.classList.remove("split-leave");
-        ["left", "right", "paddingTop", "zIndex"].forEach(k => S.el.style[k] = "");
+        ["left", "right", "top", "bottom", "paddingTop", "zIndex"].forEach(k => S.el.style[k] = "");
         S.inner.style.paddingLeft = S.inner.style.paddingRight = "";
+        if (sp.on) split.layout();  // it's back in a pane already: put its box back
       });
     }
     if (k0 && cbox()) {  // the message box glides under the chat in front; growing, it opens up from its old edges
       const k1 = cbox().getBoundingClientRect(), r = getComputedStyle(cbox()).borderRadius;
-      if (k1.width <= k0.width + 1) {
+      const dy = k0.bottom - k1.bottom;
+      if (k1.width <= k0.width + 1 || Math.abs(dy) > 1) {
         const dx = (k0.left + k0.right) / 2 - (k1.left + k1.right) / 2;
-        if (Math.abs(dx) > 1) go(comp, [{ transform: `translateX(${dx}px)` }, { transform: "none" }]);
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) go(comp, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }]);
       } else {
         go(cbox(), [{ transform: `translateX(${k0.left - k1.left}px)`, clipPath: `inset(0 ${k1.width - k0.width}px 0 0 round ${r})` },
                     { transform: "none", clipPath: `inset(0 0 0 0 round ${r})` }]);
       }
     }
-    if (!wasOn && sp.on) {  // names, the line between and the quiet box fade in once the sides are moving
-      document.querySelectorAll(".split-head, .split-grip, #split-stub").forEach(n => !n.hidden &&
-        go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 160, fill: "backwards", easing: "ease-out" }));
+    for (const n of parts()) {  // names, quiet boxes, empty panes and the lines between: the ones already up glide, new ones fade in
+      const o = pb.get(n), r = n.getBoundingClientRect();
+      if (!o) { go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: wasOn ? 90 : 160, fill: "backwards", easing: "ease-out" }); continue; }
+      const dx = o.left - r.left, dy = o.top - r.top, grow = n.classList.contains("split-grip") ? 0 : Math.max(0, r.width - o.width);
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || grow > 1)
+        go(n, [{ transform: `translate(${dx}px, ${dy}px)`, clipPath: `inset(0 ${grow}px 0 0)` }, { transform: "none", clipPath: "inset(0 0 0 0)" }]);
     }
+  }
+
+  // Which chats a layout starts with: the ones it had last time if they're still open, else the panes you have now,
+  // then the chat in front and your most recent other chats.
+  function sidesFor(k) {
+    const n = LAYOUTS[k].n, open = id => id && state.open.has(id);
+    const mem = (sp.mem[k] || []).map(id => open(id) ? id : null);
+    let sides = sp.on ? sp.sides.filter(open) : mem.filter(Boolean).length >= 2 ? mem : [];
+    sides = sides.slice(0, n);
+    while (sides.length < n) sides.push(null);
+    if (state.active && !sides.includes(state.active)) {
+      const i = sides.indexOf(null);
+      if (i >= 0) sides[i] = state.active; else sides[0] = state.active;
+    }
+    const more = [...(sp.on ? mem.filter(Boolean) : []), ...byRecent().map(S => S.sid)].filter(id => !sides.includes(id));
+    for (let i = 0; i < n; i++) if (!sides[i]) { const id = more.find(x => !sides.includes(x)); if (id) sides[i] = id; }
+    return sides;
+  }
+  const tooNarrow = () => ($("#chats")?.clientWidth || 0) < THREE_MIN;
+  function layoutBlock(k) {  // why a layout can't be picked right now, in a few words; "" when it can
+    const need = LAYOUTS[k].n - state.open.size;
+    if (need > 0) return `open ${need} more chat${need > 1 ? "s" : ""}`;
+    return k === "3" && tooNarrow() ? "window too narrow" : "";
   }
 
   const split = {
@@ -248,21 +323,35 @@ const Extras = (() => {
     moving: () => moving,
     morph,
     has: sid => sp.on && sp.sides.includes(sid),
-    toggle() {
-      if (sp.on) return split.off();
-      const cur = state.open.get(state.active);
-      const other = [...state.open.values()].filter(S => S !== cur).sort((a, b) => b.lastActive - a.lastActive)[0];
-      if (!cur || !other) return toast("Open a second chat first, then split.");
-      morph(() => { sp.sides = [cur.sid, other.sid]; sp.on = true; split.layout(); });
+    toggle() { return sp.on ? split.off() : split.set("2"); },
+    set(k) {  // from the Split button's menu
+      if (!LAYOUTS[k]) return split.off();
+      if (state.open.size < 2) return toast("Open a second chat first, then split.");
+      if (layoutBlock(k)) return;
+      if (sp.on && sp.layout === k) return;
+      morph(() => {
+        sp.sides = sidesFor(k); sp.layout = k; sp.on = true;
+        for (const S of state.open.values()) S.el.hidden = !sp.sides.includes(S.sid);
+        split.layout();
+      });
     },
-    async beside(s) {  // from a chat's menu: it opens on the right of the chat in front
+    async beside(s) {  // from a chat's menu: beside the chat in front, or one more pane in a split that's up
       const cur = state.active;
       if (!cur || cur === s.id) return;
       if (document.body.classList.contains("mini")) setMini(false);
-      if (sp.on) morph(() => { sp.on = false; for (const S of state.open.values()) S.el.hidden = S.sid !== cur; split.layout(); });
+      if (sp.on) {
+        if (sp.sides.includes(s.id)) return activate(s.id);
+        const gap = sp.sides.findIndex(id => !id || !state.open.has(id));
+        if (gap >= 0) return assign(gap, s.id);
+        const next = { "2": tooNarrow() ? "1+2" : "3", "3": "4", "1+2": "4" }[sp.layout];
+        if (!next) return toast("The split is full. Click a pane's name to change its chat.");
+        await openSession(s.id, s.cwd, s.title, true);
+        if (!sp.on || !state.open.has(s.id)) return;
+        return morph(() => { sp.sides = [...sp.sides.slice(0, LAYOUTS[next].n - 1), s.id]; sp.layout = next; activate(s.id); });
+      }
       await openSession(s.id, s.cwd, s.title, true);  // loads behind the chat you're in, so nothing flashes
       if (!state.open.has(cur) || !state.open.has(s.id) || state.active !== cur) return;
-      morph(() => { sp.sides = [cur, s.id]; sp.on = true; activate(s.id); });
+      morph(() => { sp.sides = [cur, s.id]; sp.layout = "2"; sp.on = true; activate(s.id); });
     },
     off(quiet) {  // quiet: no motion (the mini window has its own)
       if (!sp.on) return;
@@ -273,78 +362,287 @@ const Extras = (() => {
       };
       if (quiet) { moving = true; try { f(); } finally { moving = false; } } else morph(f);
     },
-    drop(sid) { if (split.has(sid)) { sp.on = false; split.layout(); } },
+    drop(sid) {  // that chat closed: its pane empties; with one chat left the split ends
+      if (!split.has(sid)) return;
+      sp.sides[sp.sides.indexOf(sid)] = null;
+      if (sp.layout === "2" || real().filter(id => id !== sid).length < 2) sp.on = false;
+      split.layout();
+    },
     onActivate(sid, prev) {
       if (!sp.on) return;
       if (!sid || !state.open.has(sid)) { sp.on = false; return split.layout(); }
-      if (!sp.sides.includes(sid)) sp.sides[Math.max(0, sp.sides.indexOf(prev))] = sid;  // a chat from the sidebar takes the side you were on
+      if (!sp.sides.includes(sid)) {  // a chat from the sidebar takes the pane you were in (or the one you picked it for, or an empty one)
+        let i = sp.target ?? sp.sides.indexOf(prev);
+        if (i < 0) i = sp.sides.findIndex(id => !id || !state.open.has(id));
+        sp.sides[Math.max(0, i)] = sid;
+      }
+      sp.target = null;
       split.layout();
     },
     layout() {
-      const main = $("#main"), b = $("#split-btn");
-      if (!main) return;
-      const [A, B] = sp.sides.map(id => state.open.get(id));
-      if (sp.on && (!A || !B || A === B)) sp.on = false;
+      const main = $("#main"), b = $("#split-btn"), chats = $("#chats");
+      if (!main || !chats) return;
+      const n = LAYOUTS[sp.layout].n;
+      sp.sides = Array.from({ length: n }, (_, i) => { const id = sp.sides[i]; return id && state.open.has(id) && sp.sides.indexOf(id) === i ? id : null; });
+      if (sp.on && real().length < 2) sp.on = false;
       main.classList.toggle("split", sp.on);
-      for (const S of state.open.values()) S.el.classList.remove("split-a", "split-b");
-      if (b) { b.hidden = !(sp.on || state.open.size > 1) || document.body.classList.contains("mini"); b.innerHTML = sp.on ? IC.one + "<span>One chat</span>" : IC.split + "<span>Split</span>"; b.title = sp.on ? "Back to one chat" : "Two chats side by side"; }
-      const fi = sp.on ? sp.sides.indexOf(state.active) : -1;
-      main.classList.toggle("focus-a", fi === 0); main.classList.toggle("focus-b", fi === 1);
-      document.querySelectorAll(".split-head, .split-grip").forEach(n => n.hidden = !sp.on);
-      $("#split-stub").hidden = !sp.on;
-      if (!sp.on) return;
-      main.style.setProperty("--split", sp.pct + "%");
-      A.el.classList.add("split-a"); B.el.classList.add("split-b"); A.el.hidden = B.el.hidden = false;
+      for (const S of state.open.values()) if (!S.el.classList.contains("split-leave")) { S.el.classList.remove("split-p", "edge-l", "edge-t"); unbox(S.el); }
+      if (b) { b.hidden = !(sp.on || state.open.size > 1) || document.body.classList.contains("mini"); b.innerHTML = sp.on ? IC.one + "<span>One chat</span>" : IC.split + "<span>Split</span>"; b.title = ""; }
+      const R = sp.on ? paneRects() : [];
+      heads.forEach((h, i) => { h.hidden = !sp.on || !sp.sides[i]; if (!h.hidden) { box(h, R[i]); h.style.bottom = ""; h.classList.toggle("edge-l", R[i][0] > 0); h.classList.toggle("edge-t", R[i][1] > 0); } });
+      stubs.forEach((s, i) => { s.hidden = !sp.on || !sp.sides[i] || sp.sides[i] === state.active; if (!s.hidden) { box(s, R[i]); s.style.top = ""; s.style.bottom = `calc(${100 - R[i][3]}% + 12px)`; } });
+      empties.forEach((e, i) => { e.hidden = !sp.on || i >= n || !!sp.sides[i]; if (!e.hidden) { box(e, R[i]); e.classList.toggle("edge-l", R[i][0] > 0); e.classList.toggle("edge-t", R[i][1] > 0); } });
+      const g = sp.geo[sp.layout];
+      grips.x.hidden = !sp.on; grips.x2.hidden = !sp.on || sp.layout !== "3"; grips.y.hidden = !sp.on || g.y == null;
+      if (!sp.on) { closePops(); place(); return; }
+      grips.x.style.left = `calc(${g.x}% - 4px)`;
+      if (g.x2) grips.x2.style.left = `calc(${g.x2}% - 4px)`;
+      if (g.y != null) { grips.y.style.top = `calc(${g.y}% - 4px)`; grips.y.style.left = sp.layout === "1+2" ? g.x + "%" : "0"; }
+      sp.sides.forEach((id, i) => {
+        const S = id && state.open.get(id);
+        if (!S) return;
+        box(S.el, R[i]);
+        S.el.classList.add("split-p"); S.el.classList.toggle("edge-l", R[i][0] > 0); S.el.classList.toggle("edge-t", R[i][1] > 0);
+        S.el.hidden = false;
+      });
+      sp.mem[sp.layout] = sp.sides.slice();
+      place();
       split.paint();
     },
-    paint() {  // names, states and the quiet box: redrawn whenever a status changes
+    paint() {  // names, states, quiet boxes and empty panes: redrawn whenever a status changes
       if (!sp.on) return;
       sp.sides.forEach((id, i) => {
-        const S = state.open.get(id), h = document.querySelector(`.split-head.${i ? "b" : "a"}`);
-        if (!S || !h) return;
+        const S = id && state.open.get(id), h = heads[i], t = stubs[i];
+        if (!S) return paintEmpty(i);
         const st = liveStatus(S);
         h.classList.toggle("on", id === state.active);
         h.querySelector(".nm").textContent = S.title || "New session";
         h.querySelector(".st").innerHTML = `<span class="wt-dot ${st === "waiting" ? "warn" : st === "running" || st === "starting" ? "run" : st === "done" ? "ok" : st === "exited" ? "bad" : ""}"></span>${esc(STATUS_WORDS[st] || "")}`;
+        const draft = (S.draft || "").trim().split("\n")[0];
+        t.querySelector(".t").textContent = S.perms.size ? "Needs you" : draft || (going(S) ? "Queue a message" : "Message Claude");
+        t.classList.toggle("warn", !!S.perms.size);
+        t.classList.toggle("has", !!draft && !S.perms.size);
       });
-      const O = state.open.get(sp.sides.find(id => id !== state.active)), t = $("#split-stub .t");
-      if (!O || !t) return;
-      const draft = (O.draft || "").trim().split("\n")[0];
-      t.textContent = O.perms.size ? "Needs you" : draft || (going(O) ? "Queue a message" : "Message Claude");
-      $("#split-stub").classList.toggle("warn", !!O.perms.size);
-      $("#split-stub").classList.toggle("has", !!draft && !O.perms.size);
     },
   };
+
+  // The message box sits under the pane in front. It lives outside the chat area, so its place is worked out in pixels.
+  function place() {
+    const main = $("#main"), chats = $("#chats"), i = sp.sides.indexOf(state.active);
+    if (!sp.on || i < 0) { ["--cl", "--cr", "--cb"].forEach(k => main.style.removeProperty(k)); return; }
+    const [l, , r, b] = paneRects()[i], c = chats.getBoundingClientRect(), m = main.getBoundingClientRect();
+    main.style.setProperty("--cl", c.left - m.left - main.clientLeft + c.width * l / 100 + "px");
+    main.style.setProperty("--cr", m.right - main.clientLeft - (c.left + c.width * r / 100) + "px");
+    main.style.setProperty("--cb", m.bottom - main.clientTop - (c.top + c.height * b / 100) + "px");
+  }
+
+  // Put a chat in a pane. One that's already in another pane swaps places with what was here.
+  async function assign(i, sid) {
+    const s = info(sid);
+    if (!state.open.has(sid)) { if (!s) return; await openSession(sid, s.cwd, s.title, true); }
+    if (!sp.on || !state.open.has(sid) || i >= LAYOUTS[sp.layout].n) return;
+    morph(() => {
+      const j = sp.sides.indexOf(sid);
+      if (j >= 0 && j !== i) sp.sides[j] = sp.sides[i];
+      sp.sides[i] = sid;
+      for (const S of state.open.values()) if (!sp.sides.includes(S.sid)) S.el.hidden = true;
+      activate(sid);
+    });
+  }
+  function closePane(i) {
+    const id = sp.sides[i], rest = sp.sides.filter((x, j) => j !== i && x && state.open.has(x));
+    morph(() => {
+      if (sp.layout === "2" || rest.length < 2) {
+        split.off();
+        const to = id === state.active ? rest[0] : state.active;
+        if (to && state.open.has(to)) activate(to);
+        return;
+      }
+      sp.sides[i] = null;
+      const S = state.open.get(id);
+      if (S) S.el.hidden = true;
+      if (id === state.active) activate(rest[0], true); else split.layout();
+    });
+  }
+
+  // chats to offer for a pane: the open ones first, then recent ones from the sidebar's list
+  function chatChoices(q) {
+    q = (q || "").trim().toLowerCase();
+    const hit = t => !q || (t || "").toLowerCase().includes(q);
+    const open = byRecent().filter(S => hit(S.title)).map(S => ({ id: S.sid, title: S.title || "New session", open: true, at: sp.sides.indexOf(S.sid) }));
+    const recent = (state.sessions || []).filter(s => !state.open.has(s.id) && !s.archived && hit(s.title))
+      .sort((a, b) => (b.mtime || 0) - (a.mtime || 0)).slice(0, q ? 8 : 6).map(s => ({ id: s.id, title: s.title || "New session", open: false, at: -1 }));
+    return { open, recent };
+  }
+  function paintEmpty(i) {
+    const e = empties[i];
+    if (!e || e.hidden) return;
+    const { open, recent } = chatChoices(""), list = [...open.filter(c => c.at < 0), ...recent].slice(0, 6);
+    const key = JSON.stringify(list.map(c => [c.id, c.title]));
+    if (e.dataset.k === key) return;
+    e.dataset.k = key; e.innerHTML = `<div class="t">Pick a chat for this pane</div>`;
+    for (const c of list) { const r = el("button", "pk"); r.textContent = c.title; r.onclick = () => assign(i, c.id); e.appendChild(r); }
+    const nw = el("button", "pk new"); nw.textContent = "New chat";
+    nw.onclick = () => { const S = state.open.get(state.active); if (S) { sp.target = i; newSession(S.cwd); } };
+    e.appendChild(nw);
+  }
+
+  // two small menus: the layouts (hover the Split button) and the chats for one pane (click its name)
+  let pops = [];
+  function closePops() {
+    for (const p of pops) {
+      if (still()) { p.remove(); continue; }
+      p.style.pointerEvents = "none";
+      p.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-4px) scale(.98)" }], { duration: 110, easing: "ease-in", fill: "forwards" }).onfinish = () => p.remove();
+    }
+    pops = [];
+  }
+  function popAt(node, anchor, alignRight) {
+    document.body.appendChild(node); pops.push(node);
+    const r = anchor.getBoundingClientRect(), w = node.offsetWidth, h = node.offsetHeight;
+    node.style.left = Math.max(8, Math.min(innerWidth - w - 8, alignRight ? r.right - w : r.left)) + "px";
+    node.style.setProperty("--ox", alignRight ? "100%" : "0%"); node.style.setProperty("--oy", "0%");
+    node.style.top = Math.max(8, Math.min(innerHeight - h - 8, r.bottom + 6)) + "px";
+    return node;
+  }
+  function layoutMenu() {
+    closePops();
+    const m = el("div", "popup menu split-menu");
+    const row = (k, name, pic, cur, why) => {
+      const r = el("div", "it" + (cur ? " cur" : "") + (why ? " off" : ""), `${PIC(pic)}<span class="a"></span>${why ? `<span class="b">${esc(why)}</span>` : ""}`);
+      r.querySelector(".a").textContent = name;
+      r.onclick = e => { e.stopPropagation(); if (why) return; closePops(); split.set(k); };
+      m.appendChild(r);
+    };
+    row("1", "One chat", "", !sp.on, "");
+    for (const k of ["2", "3", "1+2", "4"]) row(k, LAYOUTS[k].name, LAYOUTS[k].pic, sp.on && sp.layout === k, layoutBlock(k));
+    return popAt(m, $("#split-btn"), true);
+  }
+  function chatMenu(i, anchor) {
+    closePops();
+    const m = el("div", "popup menu split-pick", `<input class="find" placeholder="Find a chat" spellcheck="false"><div class="list"></div>`);
+    const list = m.querySelector(".list"), find = m.querySelector(".find");
+    const draw = () => {
+      const { open, recent } = chatChoices(find.value);
+      list.innerHTML = "";
+      const sec = (label, items) => {
+        if (!items.length) return;
+        list.appendChild(el("div", "hd", label));
+        for (const c of items) {
+          const here = c.at === i, r = el("div", "it" + (here ? " cur" : "") + (c.at >= 0 && !here ? " in" : ""), `<span class="a"></span>${c.at >= 0 && !here ? `<span class="b">swaps places</span>` : ""}`);
+          r.querySelector(".a").textContent = c.title;
+          r.onclick = e => { e.stopPropagation(); closePops(); if (!here) assign(i, c.id); };
+          list.appendChild(r);
+        }
+      };
+      sec("Open", open); sec("Recent", recent);
+      if (!open.length && !recent.length) list.appendChild(el("div", "hd", "No chat by that name"));
+    };
+    find.oninput = draw;
+    find.onkeydown = e => { e.stopPropagation(); if (e.key === "Escape") closePops(); if (e.key === "Enter") list.querySelector(".it:not(.cur)")?.click(); };
+    draw();
+    popAt(m, anchor, false);
+    setTimeout(() => find.focus(), 30);
+  }
+
+  let heads = [], stubs = [], empties = [], grips = {};
   function wireSplit() {
-    const chats = $("#chats");
-    for (const k of ["a", "b"]) {
-      const h = el("div", "split-head " + k, `<span class="nm"></span><span class="st"></span><span class="spacer"></span><button class="icb" title="Close this side">${IC.no}</button>`);
+    const chats = $("#chats"), main = $("#main");
+    for (let i = 0; i < 4; i++) {
+      const h = el("div", "split-head", `<button class="nmb" title="Change the chat in this pane"><span class="nm"></span><svg viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button><span class="st"></span><span class="spacer"></span><button class="icb" title="Take this chat out of the split">${IC.no}</button>`);
       h.hidden = true;
       h.onclick = e => {
-        const i = k === "a" ? 0 : 1, id = sp.sides[i], other = sp.sides[1 - i];
-        if (e.target.closest("button")) { morph(() => { split.off(); if (state.open.has(other)) activate(other); }); return; }
-        if (id !== state.active) activate(id, true);
+        const id = sp.sides[i];
+        if (e.target.closest(".icb")) return closePane(i);
+        if (e.target.closest(".nmb")) { e.stopPropagation(); return chatMenu(i, h.querySelector(".nmb")); }
+        if (id && id !== state.active) activate(id, true);
       };
-      chats.appendChild(h);
+      chats.appendChild(h); heads.push(h);
+      const s = el("button", "split-stub", `<span class="t"></span>`); s.hidden = true;
+      s.onclick = () => { const id = sp.sides[i]; if (id) activate(id); };
+      chats.appendChild(s); stubs.push(s);
+      const e = el("div", "split-empty"); e.hidden = true;
+      chats.appendChild(e); empties.push(e);
     }
-    const g = el("div", "split-grip"); g.hidden = true; g.title = "Drag to resize";
-    g.onmousedown = e => {
-      e.preventDefault();
-      const r = chats.getBoundingClientRect();
-      const move = ev => { sp.pct = Math.max(25, Math.min(75, ((ev.clientX - r.left) / r.width) * 100)); $("#main").style.setProperty("--split", sp.pct + "%"); };
-      const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag"); };
-      document.body.classList.add("split-drag");
-      document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+    const grip = (key, horiz) => {
+      const g = el("div", "split-grip" + (horiz ? " h" : "")); g.hidden = true; g.title = "Drag to resize";
+      g.onmousedown = e => {
+        e.preventDefault();
+        const r = chats.getBoundingClientRect();
+        const move = ev => {
+          const G = sp.geo[sp.layout], p = horiz ? ((ev.clientY - r.top) / r.height) * 100 : ((ev.clientX - r.left) / r.width) * 100;
+          const lo = key === "x2" ? G.x + 18 : sp.layout === "3" ? 18 : 25, hi = key === "x" && G.x2 ? G.x2 - 18 : sp.layout === "3" ? 82 : 75;
+          G[key] = Math.max(lo, Math.min(hi, p));
+          split.layout();
+        };
+        const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); document.body.classList.remove("split-drag", "split-drag-h"); };
+        document.body.classList.add(horiz ? "split-drag-h" : "split-drag");
+        document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+      };
+      g.ondblclick = () => morph(() => { sp.geo[sp.layout][key] = GEO[sp.layout][key]; split.layout(); });
+      chats.appendChild(g); grips[key] = g;
     };
-    g.ondblclick = () => { sp.pct = 50; $("#main").style.setProperty("--split", "50%"); };
-    chats.appendChild(g);
-    chats.addEventListener("mousedown", e => {  // a click anywhere in the other half brings that chat in front
+    grip("x"); grip("x2"); grip("y", true);
+    const dropMark = el("div", "split-drop"); dropMark.hidden = true; chats.appendChild(dropMark);
+    chats.addEventListener("mousedown", e => {  // a click anywhere in another pane brings that chat in front
       if (!sp.on) return;
       const c = e.target.closest(".chat"), S = c && [...state.open.values()].find(x => x.el === c);
       if (S && S.sid !== state.active) activate(S.sid, true);
     }, true);
-    $("#split-stub").onclick = () => { const id = sp.sides.find(x => x !== state.active); if (id) activate(id); };
-    $("#split-btn").onclick = () => split.toggle();
+    new ResizeObserver(() => { if (sp.on) place(); }).observe(chats);
+    new ResizeObserver(() => { if (sp.on) place(); }).observe(main);
+
+    // the Split button: a click is two side by side (or back to one chat); resting on it lists the layouts
+    const btn = $("#split-btn");
+    let showT = 0, hideT = 0;
+    const menuUp = () => pops.some(p => p.classList.contains("split-menu"));
+    const later = () => { clearTimeout(hideT); hideT = setTimeout(() => { if (menuUp() && !btn.matches(":hover") && !pops.some(p => p.matches(":hover"))) closePops(); }, 260); };
+    let clicked = 0;
+    const arm = () => {
+      clearTimeout(hideT);
+      if (showT || menuUp() || Date.now() - clicked < 500) return;
+      showT = setTimeout(() => { showT = 0; if (btn.matches(":hover") && !menuUp()) { const m = layoutMenu(); m.onmouseleave = later; m.onmouseenter = () => clearTimeout(hideT); } }, 180);
+    };
+    btn.onclick = () => { clearTimeout(showT); showT = 0; clicked = Date.now(); closePops(); split.toggle(); };
+    btn.onmouseenter = arm;
+    btn.onmousemove = arm;  // also after a click, once the mouse moves on the button again
+    btn.onmouseleave = () => { clearTimeout(showT); showT = 0; later(); };
+    document.addEventListener("mousedown", e => { if (pops.length && !e.target.closest(".split-menu, .split-pick, #split-btn, .split-head .nmb")) closePops(); }, true);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && pops.length) closePops(); });
+
+    // drag a chat from the sidebar onto a pane
+    $("#side").addEventListener("pointerdown", e => {
+      const row = e.target.closest(".sess[data-sid]");
+      if (!sp.on || !row || e.button !== 0 || e.target.closest("button, input, textarea, [contenteditable]")) return;
+      const sid = row.dataset.sid, x0 = e.clientX, y0 = e.clientY, pid = e.pointerId, edge = $("#side").getBoundingClientRect().right;
+      let ghost = null, at = -1;
+      const paneAt = ev => {
+        const c = chats.getBoundingClientRect(), px = ((ev.clientX - c.left) / c.width) * 100, py = ((ev.clientY - c.top) / c.height) * 100;
+        return paneRects().findIndex(([l, t, r, b]) => px >= l && px < r && py >= t && py < b);
+      };
+      const move = ev => {
+        if (ev.pointerId !== pid) return;
+        if (!ghost) {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8 || ev.clientX <= edge) return;
+          ghost = el("div", "split-ghost", "<span></span>"); ghost.firstChild.textContent = row.querySelector(".t")?.textContent || "Chat";
+          document.body.appendChild(ghost); document.body.classList.add("pane-dragging"); window.__paneDrag = true;
+        }
+        ev.preventDefault();
+        ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 10}px)`;
+        at = sp.on ? paneAt(ev) : -1;
+        dropMark.hidden = at < 0;
+        if (at >= 0) box(dropMark, paneRects()[at]);
+      };
+      const up = ev => {
+        if (ev.pointerId !== pid) return;
+        removeEventListener("pointermove", move, true); removeEventListener("pointerup", up, true); removeEventListener("pointercancel", up, true);
+        if (!ghost) return;
+        ghost.remove(); dropMark.hidden = true; document.body.classList.remove("pane-dragging");
+        setTimeout(() => { window.__paneDrag = false; }, 0);
+        if (at >= 0 && sp.on && ev.type === "pointerup") assign(at, sid);
+      };
+      addEventListener("pointermove", move, true); addEventListener("pointerup", up, true); addEventListener("pointercancel", up, true);
+    });
   }
 
   // ---------- Pick on the Shelf ----------

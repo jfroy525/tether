@@ -1795,6 +1795,10 @@ function wirePinDrag(blk) {
     let d = null;
     const move = ev => {
       if (ev.pointerId !== pid) return;
+      if (window.__paneDrag) {  // the row is being dragged onto a pane of the split instead: leave the order alone
+        if (d) { d.to = d.from; r.style.transform = ""; d.list.forEach(x => x !== r && (x.style.transform = "")); }
+        return;
+      }
       if (!d) {
         if (Math.abs(ev.clientY - y0) < 5) return;
         const rects = list.map(x => x.getBoundingClientRect()), from = list.indexOf(r);
@@ -2055,7 +2059,7 @@ function sessionMenu(s, anchor, x, y) {
   const S = state.open.get(s.id);
   const items = [
     ["Open", () => openSession(s.id, s.cwd, s.title)],
-    state.active && s.id !== state.active ? ["Open beside this chat", () => Extras.split.beside(s)] : null,
+    state.active && s.id !== state.active && !Extras.split.has(s.id) ? [Extras.split.isOn() ? "Add to split" : "Open beside this chat", () => Extras.split.beside(s)] : null,
     ["Hand off to another chat…", () => Extras.handoffDialog(s)],
     ["Rename…", () => { const row = document.querySelector(`#side-list .sess[data-sid="${s.id}"]`); if (row) rename(row, s); }],
     s.renamed ? ["Use Claude's title", () => setMeta(s.id, "title", "")] : null,
@@ -2251,7 +2255,7 @@ async function newFolderDialog() {
   setTimeout(() => name.focus(), 30);
 }
 
-function activate(sid, keep) {  // keep: a click inside the other half of a split; don't jump to the bottom or take the cursor
+function activate(sid, keep) {  // keep: a click inside another pane of a split; don't jump to the bottom or take the cursor
   if (Extras.split.isOn() && !Extras.split.moving()) return Extras.split.morph(() => activate(sid, keep));
   const prev = state.open.get(state.active);
   if (prev) { prev.draft = $("#input").value; }
