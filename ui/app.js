@@ -115,6 +115,17 @@ function makeDiff(d, { closed = false, file = "", cwd = "" } = {}) {
 }
 
 // ---------- sessions ----------
+function markPlace(S) {  // remember the block at the top of the view, for a later resize
+  const c = S.el; if (c.hidden) return;
+  const top = c.getBoundingClientRect().top; let hit = null;
+  for (let n = S.inner.lastElementChild; n; n = n.previousElementSibling) {
+    if (n.classList.contains("aged")) break;
+    const r = n.getBoundingClientRect(); if (!r.height) continue;
+    hit = { node: n, off: r.top - top };
+    if (r.top <= top) break;
+  }
+  S.place = hit;
+}
 function makeSession(info) {
   const S = { sid: info.sid, cwd: info.cwd, title: info.title || "", status: info.status || "saved", model: info.model || "", permMode: info.perm_mode || "", fast: !!info.fast, modes: {},
     effort: info.effort || "", context: info.context || info.ctx_usage?.totalTokens || 0, ctxUsage: info.ctx_usage?.totalTokens ? info.ctx_usage : null, commands: [], draft: "", attachments: [], tools: new Map(),
@@ -126,10 +137,32 @@ function makeSession(info) {
   S.el.addEventListener("scroll", () => {
     if (S.el.scrollTop < 600 && S.inner.classList.contains("folded")) unfold(S);  // nearing the top: bring back the next older blocks
     if (S.glide && Math.abs(S.el.scrollTop - (S.setTop ?? -9)) < 2) return;  // a step of our own glide
-    S.stick = nearBottom(S); if (!S.stick) S.glide = false;
+    // a scroll caused by the pane changing size (the text rewrapped under you) is not you leaving, or reaching, the newest messages
+    const resizing = S.boxW && (S.el.clientWidth !== S.boxW || S.el.clientHeight !== S.boxH || performance.now() < (S.settle || 0));
+    if (!resizing) { S.stick = nearBottom(S); if (!S.stick) S.glide = false; }
     if (S.sid === state.active) syncJump();
+    clearTimeout(S.markT); if (!S.stick) S.markT = setTimeout(() => markPlace(S), 150);
   });
-  S.el.addEventListener("wheel", e => { if (e.deltaY < 0 && S.glide) { S.glide = false; S.stick = false; syncJump(); } pullOlder(S, e); }, { passive: true });
+  // The pane changed size (a split line dragged, the window resized) and the text rewrapped: stay where you were.
+  // At the newest messages that means the bottom; further up, the block at the top of the view keeps its place.
+  if (window.ResizeObserver) {
+    const keep = () => {
+      const c = S.el, m = S.place;
+      if (S.stick) c.scrollTop = c.scrollHeight;
+      else if (m?.node.isConnected && !m.node.classList.contains("aged")) c.scrollTop += m.node.getBoundingClientRect().top - c.getBoundingClientRect().top - m.off;
+      else return;
+      S.setTop = c.scrollTop;
+    };
+    new ResizeObserver(() => {
+      const c = S.el;
+      if (c.hidden || !c.clientWidth || (c.clientWidth === S.boxW && c.clientHeight === S.boxH)) return;
+      S.boxW = c.clientWidth; S.boxH = c.clientHeight;
+      S.settle = performance.now() + 500;  // the message box and the text may still be settling to the new size
+      keep();
+    }).observe(S.el);
+    new ResizeObserver(() => { if (!S.el.hidden && performance.now() < (S.settle || 0)) keep(); }).observe(S.inner);
+  }
+  S.el.addEventListener("wheel", e => { S.settle = 0; if (e.deltaY < 0 && S.glide) { S.glide = false; S.stick = false; syncJump(); } pullOlder(S, e); }, { passive: true });
   $("#chats").appendChild(S.el);
   state.open.set(S.sid, S);
   return S;

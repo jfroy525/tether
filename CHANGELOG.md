@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Chats keep their place when resized
+- Resizing a split pane or the window no longer leaves a chat above its newest messages: a chat at the bottom stays at the bottom.
+- A chat you've scrolled up in keeps the message at the top of the view where it was.
+
 ## 2026-11-17 · Drag a pane to swap chats
 - In split view, drag a pane's name bar onto another pane and the two chats swap places. A click on the name still opens the menu, and dragging a chat from the sidebar onto a pane works as before.
 
