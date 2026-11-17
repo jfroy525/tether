@@ -839,6 +839,7 @@ async function showPeek(anchor, { ref, sid = state.active, src, label, from = 0,
   peek.ref = ref || null; peek.sid = sid; peek.anchor = anchor; peek.src = src || null; peek.label = label || "";
   box.querySelector("[data-peek=open]").hidden = !ref;
   box.querySelector(".peek-mode").hidden = true;
+  peek.text = null; peek.cut = 0; { const c = box.querySelector("[data-peek=copy]"); c.hidden = true; clearTimeout(c._t); c.textContent = "Copy"; }
   body.innerHTML = `<div class="peek-wait">Loading…</div>`;
   box.querySelector(".peek-t").textContent = label || (ref ? basename(ref) : "Image");
   box.querySelector(".peek-m").textContent = "";
@@ -857,6 +858,8 @@ async function showPeek(anchor, { ref, sid = state.active, src, label, from = 0,
   if (r.kind !== "text") { body.innerHTML = `<div class="peek-wait">${r.kind === "missing" ? "Not found" : r.kind === "dir" ? "A folder" : r.kind === "big" ? "Too large to preview" : "No text preview for this file"}</div>`; return; }
   const a = from || r.line || 0, b = to || a;
   peek.path = r.path;
+  peek.text = r.lines.join("\n"); peek.cut = r.total > r.lines.length ? r.lines.length : 0;  // what Copy puts on the clipboard
+  box.querySelector("[data-peek=copy]").hidden = false;
   if (["page", "svg", "markdown"].includes(VIEW_TYPE_OF(r.path))) {  // a page Claude wrote reads better drawn than as code
     const seg = box.querySelector(".peek-mode");
     seg.hidden = false;
@@ -4040,6 +4043,12 @@ function wire() {
   const pk = $("#peek");
   pk.querySelector("[data-peek=grow]").onclick = growPeek;
   pk.querySelector("[data-peek=close]").onclick = closePeek;
+  pk.querySelector("[data-peek=copy]").onclick = e => {  // the whole file's text, as written (not the drawn page)
+    if (peek.text == null) return;
+    api().copy(peek.text);
+    const c = e.currentTarget; c.textContent = "Copied"; clearTimeout(c._t); c._t = setTimeout(() => c.textContent = "Copy", 1200);
+    if (peek.cut) toast(`Copied the first ${peek.cut.toLocaleString()} lines`);
+  };
   pk.querySelector("[data-peek=open]").onclick = () => peek.ref && api().open_path(peek.sid, peek.ref, "file");
   pk.querySelector("[data-peek=panel]").onclick = async () => {  // keep it beside the chat
     const S = state.open.get(peek.sid);
