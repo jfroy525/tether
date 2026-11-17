@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Narrow message box stays tidy
+- In a narrow message box the model button no longer runs over Send. It drops the effort first, then the mode, and keeps the model name; a red dot shows when the mode is Bypass.
+- Under 400 px the Fast button and your favorite tools are hidden.
+
 ## 2026-11-17 · Desk dots explained
 - Hovering an editor's name on the Desk says when it has unsaved changes, which is what the dot beside the name means.
 

@@ -691,7 +691,7 @@ details.advanced[open] > summary::before { transform: rotate(90deg); }
 #run-wrap { position: relative; }
 .run-chip { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 9px 0 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--field);
   color: var(--text-2); font-size: var(--fs-meta); font-weight: 500; cursor: pointer; white-space: nowrap; max-width: 300px; transition: background .2s, transform .35s var(--spring); }
-.run-chip .lbl { display: flex; min-width: 0; white-space: nowrap; }
+.run-chip .lbl { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; }  /* never spills out of the button */
 .run-chip .lbl .m { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .run-chip .lbl .rest { flex: none; white-space: pre; }
 .run-chip:hover { background: var(--sel); color: var(--text); }
@@ -773,6 +773,12 @@ details.advanced[open] > summary::before { transform: rotate(90deg); }
 .tool-fav:hover { background: var(--hover); color: var(--text); }
 .tool-fav:active { transform: scale(.94); }
 .tool-fav svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.compose-tools.slim .run-chip .e, .compose-tools.tiny .run-chip .p { display: none; }
+.run-chip .rk { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); flex: none; margin-left: 6px; }
+.compose-tools.tiny .run-chip .rk { display: block; }
+.compose-tools.tiny #tool-favs, .compose-tools.tiny #fast-btn { display: none; }
+.compose-tools.tiny .run-chip { padding: 0 7px 0 8px; gap: 4px; }
+.compose-tools.tiny > #run-wrap { min-width: 30px; }
 .compose-tools.tight .tool-fav .l { display: none; }  /* a narrow message box: icons only (watchToolsWidth in app.js) */
 .compose-tools.tight .tool-fav { width: 32px; padding: 0; justify-content: center; }
 .ctx-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }

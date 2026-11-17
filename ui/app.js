@@ -2446,8 +2446,8 @@ function syncRun() {
   const model = modelFull($("#model-sel").selectedOptions[0]) || "Default model";
   const eff = $("#effort-sel").value, mode = $("#mode-sel").value;
   const risky = mode === "bypassPermissions";
-  // only the model name shortens with "…"; effort and mode (a red Bypass) always show
-  $("#run-btn .lbl").innerHTML = `<span class="m">${esc(model.replace(/^Default model$/, "Default"))}</span><span class="rest">${eff ? ` · ${esc(EFFORT_SHORT[eff])}` : ""} · <span class="${risky ? "risky" : ""}">${esc(MODE_SHORT[mode] || mode)}</span></span>`;
+  // the model name shortens with "…" first; a narrow box then drops effort, then mode (a red dot stands in for Bypass)
+  $("#run-btn .lbl").innerHTML = `<span class="m">${esc(model.replace(/^Default model$/, "Default"))}</span><span class="rest"><span class="e">${eff ? ` · ${esc(EFFORT_SHORT[eff])}` : ""}</span><span class="p"> · <span class="${risky ? "risky" : ""}">${esc(MODE_SHORT[mode] || mode)}</span></span></span>${risky ? '<span class="rk"></span>' : ""}`;
   $("#run-btn").title = `${model} · ${EFFORT_FULL[eff] || "Default"} effort · ${MODE_SHORT[mode] || mode}. Model, effort and permission mode (⇧Tab cycles the mode)`;
   if (!$("#run-menu").hidden) renderRunMenu();
 }
@@ -2676,7 +2676,9 @@ async function toggleFav(k) {
   renderToolFavs(); renderToolsMenu();
   state.settings = await api().save_settings({ tool_favs: favs });
 }
-new ResizeObserver(([e]) => e.target.classList.toggle("tight", e.contentRect.width < 640)).observe(document.querySelector(".compose-tools"));
+// A narrow message box gives things up in steps so nothing spills over Send: favorites lose their words (tight), the
+// model button drops the effort (slim), then the mode too, leaving the model name and a red dot for a risky mode (tiny).
+new ResizeObserver(([e]) => { const w = e.contentRect.width, c = e.target.classList; c.toggle("tight", w < 640); c.toggle("slim", w < 480); c.toggle("tiny", w < 400); }).observe(document.querySelector(".compose-tools"));
 function renderToolFavs() {
   const box = $("#tool-favs");
   if (!box) return;
