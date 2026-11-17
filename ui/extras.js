@@ -593,10 +593,11 @@ const Extras = (() => {
   function wireSplit() {
     const chats = $("#chats"), main = $("#main");
     for (let i = 0; i < 4; i++) {
-      const h = el("div", "split-head", `<button class="nmb" title="Change the chat in this pane"><span class="nm"></span><svg viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button><span class="st"></span><span class="spacer"></span><button class="icb" title="Take this chat out of the split">${IC.no}</button>`);
+      const h = el("div", "split-head", `<button class="nmb" title="Click to change the chat in this pane, or drag it to another pane"><span class="nm"></span><svg viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button><span class="st"></span><span class="spacer"></span><button class="icb" title="Take this chat out of the split">${IC.no}</button>`);
       h.hidden = true;
       h.onclick = e => {
         const id = sp.sides[i];
+        if (window.__paneDrag) return;  // the end of a drag, not a click
         if (e.target.closest(".icb")) return closePane(i);
         if (e.target.closest(".nmb")) { e.stopPropagation(); return chatMenu(i, h.querySelector(".nmb")); }
         if (id && id !== state.active) activate(id, true);
@@ -685,11 +686,9 @@ const Extras = (() => {
     document.addEventListener("mousedown", e => { if (pops.length && !e.target.closest(".split-menu, .split-pick, #split-btn, .split-head .nmb")) closePops(); }, true);
     document.addEventListener("keydown", e => { if (e.key === "Escape" && pops.length) closePops(); });
 
-    // drag a chat from the sidebar onto a pane
-    $("#side").addEventListener("pointerdown", e => {
-      const row = e.target.closest(".sess[data-sid]");
-      if (!sp.on || !row || e.button !== 0 || e.target.closest("button, input, textarea, [contenteditable]")) return;
-      const sid = row.dataset.sid, x0 = e.clientX, y0 = e.clientY, pid = e.pointerId, edge = $("#side").getBoundingClientRect().right;
+    // drag a chat onto a pane: from the sidebar, or a pane's own name bar (the two chats then swap places)
+    const dragToPane = (e, sid, label, from, edge) => {
+      const x0 = e.clientX, y0 = e.clientY, pid = e.pointerId;
       let ghost = null, at = -1;
       const paneAt = ev => {
         const c = chats.getBoundingClientRect(), px = ((ev.clientX - c.left) / c.width) * 100, py = ((ev.clientY - c.top) / c.height) * 100;
@@ -699,12 +698,14 @@ const Extras = (() => {
         if (ev.pointerId !== pid) return;
         if (!ghost) {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8 || ev.clientX <= edge) return;
-          ghost = el("div", "split-ghost", "<span></span>"); ghost.firstChild.textContent = row.querySelector(".t")?.textContent || "Chat";
+          ghost = el("div", "split-ghost", "<span></span>"); ghost.firstChild.textContent = label || "Chat";
           document.body.appendChild(ghost); document.body.classList.add("pane-dragging"); window.__paneDrag = true;
+          closePops();
         }
         ev.preventDefault();
         ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 10}px)`;
         at = sp.on ? paneAt(ev) : -1;
+        if (at === from) at = -1;
         dropMark.hidden = at < 0;
         if (at >= 0) box(dropMark, paneRects()[at]);
       };
@@ -717,7 +718,17 @@ const Extras = (() => {
         if (at >= 0 && sp.on && ev.type === "pointerup") assign(at, sid);
       };
       addEventListener("pointermove", move, true); addEventListener("pointerup", up, true); addEventListener("pointercancel", up, true);
+    };
+    $("#side").addEventListener("pointerdown", e => {
+      const row = e.target.closest(".sess[data-sid]");
+      if (!sp.on || !row || e.button !== 0 || e.target.closest("button, input, textarea, [contenteditable]")) return;
+      dragToPane(e, row.dataset.sid, row.querySelector(".t")?.textContent, -1, $("#side").getBoundingClientRect().right);
     });
+    heads.forEach((h, i) => h.addEventListener("pointerdown", e => {
+      const sid = sp.sides[i];
+      if (!sp.on || !sid || e.button !== 0 || e.target.closest(".icb")) return;
+      dragToPane(e, sid, h.querySelector(".nm").textContent, i, -1e9);
+    }));
   }
 
   // ---------- Pick on the Shelf ----------

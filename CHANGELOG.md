@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Drag a pane to swap chats
+- In split view, drag a pane's name bar onto another pane and the two chats swap places. A click on the name still opens the menu, and dragging a chat from the sidebar onto a pane works as before.
+
 ## 2026-11-17 · Split dot in your accent color
 - The dot where the pane lines meet uses the accent color from Settings › Appearance.
 
