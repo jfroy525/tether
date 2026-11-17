@@ -4124,8 +4124,24 @@ function trimPeek(box) {  // whole entries that don't fit go into "and N more", 
   const list = box.querySelector(":scope > .cl-list");
   while (list && list.childElementCount > 1 && list.scrollHeight > list.clientHeight + 1) { list.lastElementChild.remove(); box._hidden++; peekMore(box); }
 }
-function updPeek() {
-  const b = $("#update-btn");
+// Hover the restart icon (Tether's files changed on this Mac): what a restart loads. Extras.changed is the last check.
+function fillRestartPeek(box) {
+  const c = Extras.changed() || {}, notes = c.notes || [], files = c.files || [];
+  box.innerHTML = "";
+  box.appendChild(el("div", "pk-top", Extras.restartWaiting() ? "Restarting when chats finish" : "Restart to load"));
+  if (notes.length) {
+    const list = el("div", "cl-list");
+    fillLog(list, notes.slice(0, PEEK_MAX));
+    box.appendChild(list);
+    box.appendChild(el("div", "pk-more"));
+    box._hidden = notes.length - Math.min(PEEK_MAX, notes.length);
+    peekMore(box);
+  } else if (files.length) {
+    const ul = el("ul", "upd-list"); files.slice(0, 6).forEach(f => ul.appendChild(el("li", "", esc(f)))); box.appendChild(ul);
+    box.appendChild(el("div", "pk-more", (files.length > 6 ? `and ${files.length - 6} more. ` : "") + "Edited on this Mac, no change log entry yet"));
+  } else box.appendChild(el("div", "pk-more", "Tether's files changed on this Mac"));
+}
+function updPeek(b = $("#update-btn"), fill = fillPeek) {
   let t = 0;
   const hide = () => { clearTimeout(t); $("#upd-peek")?.remove(); };
   b.addEventListener("mouseenter", () => {
@@ -4134,7 +4150,7 @@ function updPeek() {
       if (b.hidden || !$("#modal").hidden) return;  // not over an open dialog
       hide();
       const box = el("div", "upd-peek"); box.id = "upd-peek";
-      fillPeek(box);
+      fill(box);
       if (!box.childElementCount) return;
       const r = b.getBoundingClientRect(), side = $("#side").getBoundingClientRect();
       box.style.left = Math.max(8, side.left) + "px";
@@ -4241,6 +4257,7 @@ window.addEventListener("pywebviewready", async () => {
   reopenAfterUpdate();
   $("#update-btn").onclick = updateDialog;
   updPeek();
+  updPeek($("#restart-btn"), fillRestartPeek);
   setTimeout(checkUpdate, 15000);  // GitHub is asked at most every 6 hours; this only reads the answer
   setInterval(checkUpdate, 3600 * 1000);
 });

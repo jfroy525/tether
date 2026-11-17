@@ -904,9 +904,11 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
       if (ok) runRestart(true);
     });
   }
+  let changed = null;  // the last answer: {notes, files} a restart would load
   async function checkChanged() {
     const r = await api().code_changed().catch(() => null);
     const b = $("#restart-btn");
+    changed = r?.changed ? r : null;
     if (b) b.hidden = !r?.changed;
     if (r?.changed && r.pushed) autoCheck("restart");  // on its own only once the change is on GitHub, not mid-edit
   }
@@ -1005,5 +1007,5 @@ addEventListener("message",e=>{if(e.source!==parent||!e.data||!e.data.tetherPick
     sync();
   }
 
-  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog, panelAct };
+  return { init, sync, autoCheck, loadHandoffs, handoffDialog, turnEnd, userSpoke, fromHistory, carryAsk, quickSend, openWaiting, closeWaiting, split, PICK_JS, onPick, restartDialog, panelAct, changed: () => changed, restartWaiting: () => rs.waiting };
 })();

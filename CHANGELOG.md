@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Restart icon shows what changed
+- Hover the restart icon (shown when Tether's files changed on this Mac) for what the restart will load: the change log entries added since Tether started, or the names of edited files when there is no entry yet.
+
 ## 2026-11-17 · Split menu fits, and any layout with two chats
 - The Split menu grows to fit its longest row, so its wording stays inside the box at larger text sizes.
 - You can pick a three or four pane layout with fewer chats open. The spare panes show "Pick a chat for this pane" with your recent chats and New chat.

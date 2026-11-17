@@ -2302,7 +2302,16 @@ class Api:
     def code_changed(self):
         """Whether Tether's own files differ from what this running copy loaded (edited on this Mac since it started)."""
         changed = bool(BOOT_CODE) and code_signature() != BOOT_CODE
-        return {"changed": changed, "pushed": changed and updater.pushed()}  # pushed: Update on its own restarts only then
+        if not changed:
+            return {"changed": False, "pushed": False}
+        # what a restart would load, for the icon's hover card: change log entries added since this copy started,
+        # else the names of files edited here and not yet committed
+        notes = [e for e in updater.change_log() if e["key"] not in BOOT_LOG]
+        files = []
+        if not notes:
+            code, out = updater._git("status", "--porcelain", "--", "*.py", "ui/*.js", "ui/*.css", "ui/*.html", "markup.html", timeout=10)
+            files = [ln[3:].strip().split("/")[-1] for ln in out.splitlines() if ln[3:].strip()] if code == 0 else []
+        return {"changed": True, "pushed": updater.pushed(), "notes": notes, "files": files}  # pushed: Update on its own restarts only then
 
     def take_reopen(self):
         """The chats that were open before an update restarted Tether, once."""
@@ -2351,6 +2360,10 @@ try:
     BOOT_CODE = code_signature()
 except Exception:  # noqa: BLE001
     BOOT_CODE = ""
+try:
+    BOOT_LOG = {e["key"] for e in updater.change_log()}  # the change log this copy started with
+except Exception:  # noqa: BLE001
+    BOOT_LOG = set()
 
 
 def click_through() -> None:
