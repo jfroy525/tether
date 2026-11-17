@@ -39,6 +39,7 @@ import notifier
 import mini
 import updater
 import cc_update
+import desk
 import screen
 import lift
 import voice
@@ -133,6 +134,7 @@ class Api:
                                    key_id=1, name="voice key")
         self._circle_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle), key_id=2, name="circle key")
         self._markup_key = SpeakKey(lambda: None, lambda: self._bg(self.start_circle, "window"), key_id=3, name="markup key")
+        self._desk = desk.Desk(SUPPORT, self._emit)  # Slate, Ledger, Folio and Tack in the side panel (desk.py)
         self._other = gateway.OtherModels(SUPPORT, self._emit)  # non-Claude models a gateway serves (gateway.py)
         threading.Thread(target=self._send_loop, daemon=True).start()
 
@@ -618,6 +620,81 @@ class Api:
         return {"ok": True}
 
     IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+
+    # ----- the Desk: Slate, Ledger, Folio, Tack (desk.py)
+    @staticmethod
+    def _desk_types(types) -> tuple:
+        """File types in the one form the Open and Save boxes take ('Name (*.ext;*.ext)'); anything else is dropped."""
+        out = []
+        for t in types or ():
+            m = re.fullmatch(r"(.*?)\s*\(([^)]*)\)", str(t))
+            if not m:
+                continue
+            name = re.sub(r"[^\w ]", "", m.group(1)).strip() or "Files"
+            exts = [e for e in m.group(2).split(";") if re.fullmatch(r"\*\.(\w+|\*)", e)]
+            if exts:
+                out.append(f"{name} ({';'.join(exts)})")
+        return tuple(out)
+
+    def desk_page(self, app):
+        return self._desk.page(app)
+
+    def desk_open(self, app):
+        """The Open box for one editor; the picked file in the form that editor takes."""
+        got = self._window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, directory=self._desk._start_dir(),
+                                              file_types=self._desk_types(desk.APPS.get(app, {}).get("types")))
+        if not got:
+            return None
+        return self._desk.read(app, self._desk.grant(got[0] if isinstance(got, (list, tuple)) else got))
+
+    def desk_read(self, app, path):
+        return self._desk.read(app, path)
+
+    def desk_save(self, app, path, data):
+        return self._desk.write(app, path, data or {})
+
+    def desk_save_as(self, app, name, data, types=None):
+        """The Save box: where and under what name, then the file is written. None if you cancelled."""
+        ext = desk.APPS.get(app, {}).get("ext") or ""
+        got = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=self._desk._start_dir(), save_filename=name or ("Untitled" + ext),
+                                              file_types=self._desk_types(types))
+        if not got:
+            return None
+        path = got[0] if isinstance(got, (list, tuple)) else got
+        if not Path(path).suffix and Path(name or "").suffix:
+            path += Path(name).suffix
+        return self._desk.write(app, self._desk.grant(path), data or {})
+
+    def desk_save_to(self, app, path, data):
+        """Claude's desk tool saving under a path it was given."""
+        return self._desk.write(app, self._desk.grant(path), data or {})
+
+    def desk_image(self):
+        """Folio's Insert › Picture: a PNG, JPEG or GIF you pick, as the page holds it."""
+        got = self._window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=False, directory=self._desk._start_dir(),
+                                              file_types=("Pictures (*.png;*.jpg;*.jpeg;*.gif)",))
+        if not got:
+            return None
+        p = Path(got[0] if isinstance(got, (list, tuple)) else got)
+        kind = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".gif": "gif"}.get(p.suffix.lower())
+        try:
+            if not kind or p.stat().st_size > 8_000_000:
+                return {"error": "Pick a PNG, JPEG or GIF under 8 MB."}
+            return {"src": f"data:image/{kind};base64,{base64.b64encode(p.read_bytes()).decode()}"}
+        except OSError as exc:
+            return {"error": f"Couldn't read {p.name}: {exc.strerror or exc}"}
+
+    def desk_stat(self, path):
+        return self._desk.stat(path)
+
+    def desk_draft_load(self, app):
+        return self._desk.draft_load(app)
+
+    def desk_draft_save(self, app, draft):
+        return self._desk.draft_save(app, draft or {})
+
+    def desk_reply(self, rid, result):
+        return self._desk.reply(rid, result)
 
     def pick_files(self):
         got = self._window.create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True, directory=str(Path.home()))
@@ -2353,7 +2430,7 @@ def code_signature() -> str:
     import hashlib
     h = hashlib.sha1()
     here = Path(__file__).resolve().parent
-    files = sorted([*here.glob("*.py"), *(here / "ui").glob("*.js"), *(here / "ui").glob("*.css"), *(here / "ui").glob("*.html"), here / "markup.html"])
+    files = sorted([*here.glob("*.py"), *(here / "ui").glob("*.js"), *(here / "ui").glob("*.css"), *(here / "ui").glob("*.html"), *(here / "ui" / "desk").glob("*.*"), here / "markup.html"])
     for f in files:
         try:
             h.update(f.name.encode()); h.update(f.read_bytes())

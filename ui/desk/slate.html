@@ -1,0 +1,170 @@
+<style>
+  .tabs { display: flex; align-items: stretch; gap: 2px; height: 32px; padding: 0 6px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .ft { display: flex; align-items: center; gap: 6px; max-width: 200px; padding: 0 6px 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-3); cursor: pointer; flex: none; animation: tab-in .22s var(--soft); }
+  @keyframes tab-in { from { opacity: 0; max-width: 0; padding: 0; } }
+  .ft:hover { color: var(--text); }
+  .ft.on { color: var(--text); border-bottom-color: var(--accent); }
+  .ft .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ft .x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; color: var(--text-3); font-size: 13px; line-height: 1; }
+  .ft .x:hover { background: var(--hover); color: var(--text); }
+  .ft .x.dirty::before { content: "●"; font-size: 9px; color: var(--accent); }
+  .ft .x.dirty:hover::before { content: "×"; font-size: 13px; color: inherit; }
+  .ft .x:not(.dirty)::before { content: "×"; }
+  .tabs .plus { align-self: center; flex: none; }
+  #ed { position: absolute; inset: 0; -webkit-user-select: text; user-select: text; cursor: text; }
+  .CodeMirror { height: 100%; background: var(--bg); color: var(--text); font: calc(12.5px * var(--scale)) / 1.55 var(--mono); }
+  .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
+  .CodeMirror-linenumber { color: var(--text-3); opacity: .7; padding: 0 8px 0 12px; }
+  .CodeMirror-cursor { border-left: 2px solid var(--accent); }
+  .CodeMirror-activeline-background { background: var(--hover); }
+  .CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  .CodeMirror-matchingbracket { color: inherit !important; background: var(--accent-soft); outline: 1px solid var(--accent-line); }
+  .cm-searching { background: color-mix(in srgb, #F5B85B 45%, transparent); }
+  .CodeMirror-dialog { background: var(--bg-2); color: var(--text); border-bottom: 1px solid var(--line-2); padding: 6px 12px; font: var(--fs) var(--font); }
+  .CodeMirror-dialog input { font: var(--fs) var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 6px; width: 16em; outline: 0; }
+  .CodeMirror-dialog button { font: inherit; }
+  .cm-s-default .cm-keyword { color: #8250DF; } .cm-s-default .cm-atom, .cm-s-default .cm-number { color: #0550AE; } .cm-s-default .cm-def { color: #6639BA; }
+  .cm-s-default .cm-variable-2 { color: #0A5F74; } .cm-s-default .cm-variable-3, .cm-s-default .cm-type { color: #953800; } .cm-s-default .cm-property { color: #0550AE; }
+  .cm-s-default .cm-comment { color: #6E7781; font-style: italic; } .cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: #0A7B45; }
+  .cm-s-default .cm-tag { color: #116329; } .cm-s-default .cm-attribute { color: #0550AE; } .cm-s-default .cm-builtin { color: #953800; }
+  .cm-s-default .cm-header { color: #0550AE; font-weight: 600; } .cm-s-default .cm-link { color: #0A5F74; } .cm-s-default .cm-quote { color: #6E7781; }
+  .cm-s-default .cm-meta, .cm-s-default .cm-qualifier { color: #6E7781; } .cm-s-default .cm-operator { color: inherit; }
+  .dark .cm-s-default .cm-keyword { color: #C792EA; } .dark .cm-s-default .cm-atom, .dark .cm-s-default .cm-number { color: #F78C6C; } .dark .cm-s-default .cm-def { color: #82AAFF; }
+  .dark .cm-s-default .cm-variable-2 { color: #89DDFF; } .dark .cm-s-default .cm-variable-3, .dark .cm-s-default .cm-type { color: #FFCB6B; } .dark .cm-s-default .cm-property { color: #9CC4FF; }
+  .dark .cm-s-default .cm-comment { color: #7F8C98; } .dark .cm-s-default .cm-string, .dark .cm-s-default .cm-string-2 { color: #A5D6A7; }
+  .dark .cm-s-default .cm-tag { color: #F07178; } .dark .cm-s-default .cm-attribute { color: #FFCB6B; } .dark .cm-s-default .cm-builtin { color: #FFCB6B; }
+  .dark .cm-s-default .cm-header { color: #82AAFF; } .dark .cm-s-default .cm-link { color: #89DDFF; } .dark .cm-s-default .cm-quote, .dark .cm-s-default .cm-meta, .dark .cm-s-default .cm-qualifier { color: #7F8C98; }
+</style>
+<div class="bar">
+  <button class="name" id="doc-name"><span class="dot"></span><span class="t"></span><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" id="undo" title="Undo (⌘Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button class="ib" id="redo" title="Redo (⇧⌘Z)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <button class="ib" id="find" title="Find (⌘F), replace (⌥⌘F)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg></button>
+  <button class="ib" id="wrap" title="Wrap long lines"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-4m0 0 2-2m-2 2 2 2M4 18h5"/></svg></button>
+  <select class="pick" id="lang" title="Language"></select>
+  <span class="sp"></span>
+  <button class="btn" id="ask-claude" title="Put this file, and what's selected, in your message to Claude"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span class="l">Ask Claude</span></button>
+</div>
+<div class="tabs" id="tabs"></div>
+<div class="grow"><div id="ed"></div></div>
+<div class="foot"><span id="pos"></span><span id="selinfo"></span><span class="sp"></span><span id="lines"></span><span id="langname"></span></div>
+<script>
+(() => {
+  const { $, el, call, toast, menu, ask, touch } = Desk;
+  const LANGS = [["Plain text", "text/plain", "txt log"], ["Markdown", "text/x-markdown", "md markdown"], ["Python", "text/x-python", "py"], ["JavaScript", "text/javascript", "js mjs cjs jsx"],
+    ["TypeScript", "text/typescript", "ts tsx"], ["JSON", "application/json", "json"], ["HTML", "text/html", "html htm"], ["CSS", "text/css", "css"], ["XML", "application/xml", "xml svg plist"],
+    ["SQL", "text/x-sql", "sql"], ["Shell", "text/x-sh", "sh bash zsh"], ["YAML", "text/x-yaml", "yaml yml"], ["TOML", "text/x-toml", "toml ini cfg"], ["C", "text/x-csrc", "c h"],
+    ["C++", "text/x-c++src", "cpp cc hpp"], ["Java", "text/x-java", "java"], ["C#", "text/x-csharp", "cs"], ["Go", "text/x-go", "go"], ["Rust", "text/x-rustsrc", "rs"], ["Diff", "text/x-diff", "diff patch"]];
+  const modeFor = name => { const e = (/\.([^.]+)$/.exec(name || "") || [, ""])[1].toLowerCase(); return (LANGS.find(l => l[2].split(" ").includes(e)) || LANGS[0])[1]; };
+  const cm = CodeMirror($("#ed"), { lineNumbers: true, styleActiveLine: true, matchBrackets: true, autoCloseBrackets: true, indentUnit: 4, tabSize: 4, lineWrapping: false,
+    extraKeys: { "Cmd-/": "toggleComment", "Ctrl-/": "toggleComment", "Alt-F": "findPersistent", Tab: c => c.somethingSelected() ? c.indentSelection("add") : c.replaceSelection(" ".repeat(c.getOption("indentUnit")), "end") } });
+  let tabs = [], cur = null, wrap = false;
+  $("#lang").innerHTML = LANGS.map(l => `<option value="${l[1]}">${l[0]}</option>`).join("");
+
+  const newTab = (d, text = "", mode) => { const t = Object.assign(d || Desk.blankDoc(), { cd: CodeMirror.Doc(text, mode || modeFor(d?.name)), mode: mode || modeFor(d?.name) }); t.clean = t.cd.changeGeneration(); tabs.push(t); return t; };
+  function show(t) {
+    cur = t; cm.swapDoc(t.cd); cm.setOption("mode", t.mode); $("#lang").value = t.mode;
+    Desk.use(t); drawTabs(); foot(); cm.focus();
+  }
+  function drawTabs() {
+    const box = $("#tabs"), keep = new Map([...box.querySelectorAll(".ft")].map(n => [n._t, n]));
+    box.querySelector(".plus")?.remove();
+    for (const [t, n] of keep) if (!tabs.includes(t)) n.remove();
+    tabs.forEach((t, i) => {
+      let n = keep.get(t);
+      if (!n) { n = el("button", "ft", `<span class="t"></span><span class="x"></span>`); n._t = t;
+        n.onclick = e => e.target.classList.contains("x") ? closeTab(t) : show(t);
+        n.onauxclick = e => { if (e.button === 1) closeTab(t); }; }
+      n.querySelector(".t").textContent = t.name || "Untitled"; n.title = t.path || "Not saved yet";
+      n.classList.toggle("on", t === cur); n.querySelector(".x").classList.toggle("dirty", t.dirty);
+      if (box.children[i] !== n) box.insertBefore(n, box.children[i] || null);
+    });
+    const p = el("button", "ib plus", "+"); p.title = "New file (⌘N)"; p.onclick = () => Desk.fresh(); box.appendChild(p);
+    box.querySelector(".ft.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  async function closeTab(t) {
+    if (t.dirty) {
+      const r = await ask(`<b>${Desk.esc(t.name || "Untitled")}</b> has changes that aren't saved.`, [["Cancel", null], ["Don't save", "drop"], ["Save", "save", "primary"]]);
+      if (!r) return;
+      if (r === "save") { show(t); if (!(await Desk.save())) return; }
+    }
+    const i = tabs.indexOf(t); tabs.splice(i, 1);
+    if (!tabs.length) newTab();
+    show(cur === t ? tabs[Math.min(i, tabs.length - 1)] : cur);
+    Desk.saveDraft();
+  }
+  function foot() {
+    const c = cm.getCursor(), sel = cm.getSelection();
+    $("#pos").textContent = `Line ${c.line + 1}, column ${c.ch + 1}`;
+    $("#selinfo").textContent = sel ? `${sel.length} selected` : "";
+    $("#lines").textContent = `${cm.lineCount()} lines`;
+    $("#langname").textContent = (LANGS.find(l => l[1] === cur?.mode) || LANGS[0])[0];
+    $("#undo").disabled = !cm.historySize().undo; $("#redo").disabled = !cm.historySize().redo;
+  }
+  cm.on("cursorActivity", foot);
+  cm.on("change", () => { if (!cur) return; const d = !cur.cd.isClean(cur.clean); if (d !== cur.dirty) { cur.dirty = d; Desk.paint(); } touch(false); foot(); });
+  $("#undo").onclick = () => { cm.undo(); cm.focus(); };
+  $("#redo").onclick = () => { cm.redo(); cm.focus(); };
+  $("#find").onclick = () => cm.execCommand("findPersistent");
+  $("#wrap").onclick = () => { wrap = !wrap; cm.setOption("lineWrapping", wrap); $("#wrap").classList.toggle("on", wrap); Desk.saveDraft(); };
+  $("#lang").onchange = e => { cur.mode = e.target.value; cm.setOption("mode", cur.mode); foot(); Desk.saveDraft(); };
+  const pick = file => !file ? cur : tabs.find(t => t.path === file) || tabs.find(t => t.name === file) || null;
+
+  Desk.start({
+    many: true,
+    get types() { const e = (/\.([^.]+)$/.exec(cur?.name || "") || [, "txt"])[1]; return [[e === "txt" ? "Text file" : `.${e} file`, e]]; },
+    blank() { show(newTab()); },
+    load(r, d) {
+      const have = tabs.find(t => t.path === r.path);
+      if (have) { const top = cm.getScrollInfo().top; have.cd.setValue(r.text); have.clean = have.cd.changeGeneration(); have.dirty = false; have.mtime = r.mtime; if (have === cur) cm.scrollTo(null, top); else show(have); drawTabs(); return; }
+      const spare = cur && !cur.path && !cur.dirty && !cur.cd.getValue() ? cur : null;  // an untouched Untitled gives way
+      if (spare) tabs.splice(tabs.indexOf(spare), 1);
+      show(newTab(d, r.text));
+    },
+    dump() { return { text: cm.getValue() }; },
+    onDoc(d) { if (d === cur && cur.cd && !d.dirty) cur.clean = cur.cd.changeGeneration(); if (d === cur && d.name) { const m = modeFor(d.name); if (!cur.modeSet && m !== cur.mode && cur.mode === "text/plain") { cur.mode = m; cm.setOption("mode", m); $("#lang").value = m; } } drawTabs(); foot(); },
+    draft() { return { wrap, active: tabs.indexOf(cur), paths: tabs.map(t => t.path).filter(Boolean),
+      tabs: tabs.map(t => ({ path: t.path, name: t.name, dirty: t.dirty, mtime: t.mtime, mode: t.mode, text: t.cd.getValue() })) }; },
+    restore(d) {
+      for (const t of d.tabs || []) { const n = newTab({ path: t.path || "", name: t.name || "", dirty: !!t.dirty, mtime: t.mtime || 0 }, t.text || "", t.mode); if (t.dirty) n.clean = -1; }
+      if (!tabs.length) newTab();
+      wrap = !!d.wrap; cm.setOption("lineWrapping", wrap); $("#wrap").classList.toggle("on", wrap);
+      show(tabs[Math.max(0, Math.min(tabs.length - 1, d.active || 0))]);
+    },
+    forChat() {
+      const a = cm.getCursor("from"), b = cm.getCursor("to"), sel = cm.somethingSelected();
+      return `In Slate on the Desk, ${cur.name || "an untitled file"}${cur.path ? ` (${cur.path})` : ""}${sel ? `, lines ${a.line + 1} to ${b.line + 1} selected` : ""}: `;
+    },
+    state() { const a = cm.getCursor("from"), b = cm.getCursor("to");
+      return { files: tabs.map(t => ({ name: t.name || "Untitled", path: t.path, unsaved: t.dirty, in_front: t === cur, lines: t.cd.lineCount() })),
+        selection: cm.somethingSelected() ? { from_line: a.line + 1, to_line: b.line + 1, text: cm.getSelection().slice(0, 4000) } : null }; },
+    read(a) {
+      const t = pick(a.file); if (!t) return { error: `No open file called ${a.file}.` };
+      const from = Math.max(1, a.from_line || 1), to = Math.min(t.cd.lineCount(), a.to_line || t.cd.lineCount());
+      const full = t.cd.getRange({ line: from - 1, ch: 0 }, { line: to - 1, ch: t.cd.getLine(to - 1).length });
+      return { name: t.name || "Untitled", path: t.path, unsaved: t.dirty, lines: t.cd.lineCount(), from_line: from, to_line: to, text: full.length > 200000 ? full.slice(0, 200000) + "\n… (cut; ask for a line range)" : full };
+    },
+    write(a) {
+      const t = pick(a.file); if (!t) return { error: `No open file called ${a.file}.` };
+      if (t !== cur) show(t);
+      if (a.text != null && a.from_line) { const to = Math.min(cm.lineCount(), a.to_line || a.from_line); cm.replaceRange(String(a.text), { line: a.from_line - 1, ch: 0 }, { line: to - 1, ch: cm.getLine(to - 1).length }); return { ok: true, replaced_lines: [a.from_line, to] }; }
+      if (a.text != null) { const top = cm.getScrollInfo().top; cm.operation(() => cm.replaceRange(String(a.text), { line: 0, ch: 0 }, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length })); cm.scrollTo(null, top); return { ok: true, lines: cm.lineCount() }; }
+      if (a.find != null) {
+        const all = cm.getValue(), find = String(a.find), n = all.split(find).length - 1;
+        if (!n) return { error: "That text isn't in the file. Read it and match it exactly." };
+        if (n > 1 && !a.all) return { error: `That text appears ${n} times. Give more of it so it matches once, or pass all: true.` };
+        const c = cm.getSearchCursor(find); let k = 0;
+        cm.operation(() => { while (c.findNext()) { c.replace(String(a.replace ?? "")); k++; if (!a.all) break; } });
+        return { ok: true, replaced: k };
+      }
+      if (a.append != null) { cm.replaceRange(String(a.append), { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length }); return { ok: true }; }
+      if (a.language) { const l = LANGS.find(x => x[0].toLowerCase() === String(a.language).toLowerCase()); if (l) { cur.mode = l[1]; cur.modeSet = true; cm.setOption("mode", l[1]); $("#lang").value = l[1]; foot(); return { ok: true }; } return { error: "Unknown language." }; }
+      return { error: "Pass text (whole file, or with from_line/to_line), find + replace, or append." };
+    },
+    onTheme() { cm.refresh(); },
+  });
+  addEventListener("resize", () => cm.refresh());
+})();
+</script>

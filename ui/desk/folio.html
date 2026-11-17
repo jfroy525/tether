@@ -1,0 +1,258 @@
+<style>
+  #scroll { position: absolute; inset: 0; overflow: auto; background: var(--bg-2); padding: 22px 18px 60px; }
+  #page { max-width: 800px; min-height: 100%; margin: 0 auto; padding: 56px 64px 72px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .10);
+    font: calc(15px * var(--scale)) / 1.6 var(--font); color: var(--text); outline: 0; cursor: text; -webkit-user-select: text; user-select: text; overflow-wrap: break-word; }
+  @media (max-width: 620px) { #page { padding: 28px 24px 48px; } #scroll { padding: 10px 8px 40px; } }
+  #page:empty::before { content: "Start writing…"; color: var(--text-3); }
+  #page p { margin: 0 0 .7em; } #page h1 { font-size: 1.9em; line-height: 1.25; margin: .2em 0 .5em; } #page h2 { font-size: 1.45em; line-height: 1.3; margin: 1em 0 .4em; }
+  #page h3 { font-size: 1.18em; margin: .9em 0 .35em; } #page h4 { font-size: 1.02em; margin: .8em 0 .3em; }
+  #page ul, #page ol { margin: 0 0 .7em; padding-left: 1.7em; } #page li { margin: .15em 0; }
+  #page blockquote { margin: 0 0 .7em; padding: .1em 0 .1em 1em; border-left: 3px solid var(--line-2); color: var(--text-2); font-style: italic; }
+  #page pre { margin: 0 0 .7em; padding: 10px 12px; border-radius: 6px; background: var(--hover); font: .87em/1.5 var(--mono); white-space: pre-wrap; }
+  #page code { padding: 1px 4px; border-radius: 4px; background: var(--hover); font: .9em var(--mono); } #page pre code { padding: 0; background: none; }
+  #page a { color: var(--accent); } #page img { max-width: 100%; height: auto; border-radius: 3px; }
+  #page hr { border: 0; border-top: 1px solid var(--line-2); margin: 1.2em 0; }
+  #page hr.page-break { border-top: 1px dashed var(--text-3); position: relative; overflow: visible; margin: 2em -64px; }
+  #page hr.page-break::after { content: "Page break"; position: absolute; left: 50%; top: -0.75em; transform: translateX(-50%); padding: 0 8px; background: var(--paper); color: var(--text-3); font: 11px var(--font); }
+  #page table { border-collapse: collapse; width: 100%; margin: 0 0 .9em; } #page td, #page th { border: 1px solid var(--line-2); padding: 5px 8px; vertical-align: top; min-width: 40px; } #page td p { margin: 0; }
+</style>
+<div class="bar">
+  <button class="name" id="doc-name"><span class="dot"></span><span class="t"></span><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" data-c="undo" title="Undo (⌘Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button class="ib" data-c="redo" title="Redo (⇧⌘Z)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <select class="pick" id="block" title="Paragraph style"><option value="p">Paragraph</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="blockquote">Quote</option><option value="pre">Code</option></select>
+  <button class="ib" data-c="bold" title="Bold (⌘B)"><b>B</b></button>
+  <button class="ib" data-c="italic" title="Italic (⌘I)"><i style="font-family:Georgia,serif">I</i></button>
+  <button class="ib" data-c="underline" title="Underline (⌘U)"><u>U</u></button>
+  <button class="ib" data-c="strikeThrough" title="Strikethrough"><s>S</s></button>
+  <button class="ib" id="color" title="Text color and highlight"><svg viewBox="0 0 24 24"><path d="M7 17 12 5l5 12M9 13h6"/><path d="M5 21h14" stroke-width="2.6"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" data-c="insertUnorderedList" title="Bulleted list"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg></button>
+  <button class="ib" data-c="insertOrderedList" title="Numbered list"><svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10M4 5h1.5v4M4 15.5c.5-1 2.5-1 2.5.2 0 1-2.500 1.800-2.500 3.300h2.800"/></svg></button>
+  <button class="ib" id="align" title="Alignment"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" id="link" title="Link (⌘K)"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/></svg></button>
+  <button class="ib" id="insert" title="Insert a table, picture, line or page break"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <span class="sp"></span>
+  <button class="btn" id="ask-claude" title="Put this document, and the selected text, in your message to Claude"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span class="l">Ask Claude</span></button>
+</div>
+<div class="grow"><div id="scroll"><div id="page" contenteditable="true" spellcheck="true"></div></div></div>
+<div class="foot"><span id="words"></span><span class="sp"></span><span id="where"></span></div>
+<script>
+(() => {
+  const { $, el, esc, toast, menu, ask, touch, call } = Desk;
+  const page = $("#page");
+  const ex = (c, v) => { page.focus(); document.execCommand(c, false, v); after(); };
+
+  // ----- only plain document HTML ever goes on the page (files, pastes and Claude's edits all pass through here)
+  const INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "STRIKE", "DEL", "SUB", "SUP", "CODE", "MARK", "SPAN", "FONT", "A"]);
+  const BLOCK = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "UL", "OL", "LI", "BLOCKQUOTE", "PRE", "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH", "BR", "HR", "IMG"]);
+  const cssOk = (el, tag) => {
+    const out = [], s = el.style;
+    if (!s) return "";
+    if (!INLINE.has(tag)) { if (/^(center|right|justify)$/.test(s.textAlign)) out.push(`text-align:${s.textAlign}`); return out.join(";"); }
+    if (s.color && !/^(inherit|initial|windowtext)$/i.test(s.color)) out.push(`color:${s.color}`);
+    if (s.backgroundColor && !/^(transparent|inherit|initial)$/i.test(s.backgroundColor)) out.push(`background-color:${s.backgroundColor}`);
+    if (/^(bold|[6-9]00)$/.test(s.fontWeight)) out.push("font-weight:bold");
+    if (s.fontStyle === "italic") out.push("font-style:italic");
+    const td = s.textDecorationLine || s.textDecoration || "";
+    if (/underline/.test(td)) out.push("text-decoration:underline"); else if (/line-through/.test(td)) out.push("text-decoration:line-through");
+    return out.join(";");
+  };
+  function clean(html) {
+    const src = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html"), out = document.createElement("div");
+    const walk = (from, to) => {
+      for (const n of [...from.childNodes]) {
+        if (n.nodeType === 3) { to.appendChild(document.createTextNode(n.nodeValue)); continue; }
+        if (n.nodeType !== 1) continue;
+        let tag = n.tagName;
+        if (/^(SCRIPT|STYLE|HEAD|META|LINK|TITLE|IFRAME|OBJECT|EMBED|SVG|NOSCRIPT|TEMPLATE|FORM|INPUT|BUTTON|SELECT|TEXTAREA)$/.test(tag)) continue;
+        if (tag === "H5" || tag === "H6") tag = "H4";
+        if (!INLINE.has(tag) && !BLOCK.has(tag)) { walk(n, to); continue; }  // an unknown wrapper: keep what's inside
+        const e = document.createElement(tag === "FONT" ? "span" : tag.toLowerCase());
+        const st = cssOk(n, tag); if (st) e.setAttribute("style", st);
+        if (tag === "FONT" && n.getAttribute("color")) e.style.color = n.getAttribute("color");
+        if (tag === "A") { const h = n.getAttribute("href") || ""; if (/^(https?:|mailto:)/i.test(h)) { e.setAttribute("href", h); } else { walk(n, to); continue; } }
+        if (tag === "IMG") { const s = n.getAttribute("src") || ""; if (!/^data:image\/(png|jpeg|jpg|gif);base64,/i.test(s)) continue; e.setAttribute("src", s); const w = parseInt(n.getAttribute("width") || n.style.width); if (w > 0) e.setAttribute("width", Math.min(1200, w)); }
+        if (tag === "HR" && n.classList.contains("page-break")) e.className = "page-break";
+        if ((tag === "TD" || tag === "TH") && +n.getAttribute("colspan") > 1) e.setAttribute("colspan", +n.getAttribute("colspan"));
+        walk(n, e); to.appendChild(e);
+      }
+    };
+    walk(src.body, out);
+    return out.innerHTML;
+  }
+  // ----- Markdown and plain text, in and out
+  const inlineMd = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/(^|[^_\w])_([^_\s][^_]*)_(?!\w)/g, "$1<i>$2</i>")
+    .replace(/~~([^~]+)~~/g, "<s>$1</s>").replace(/\[([^\]]+)\]\((https?:[^)\s]+|mailto:[^)\s]+)\)/g, '<a href="$2">$1</a>');
+  function fromMd(md) {
+    const L = String(md).replace(/\r/g, "").split("\n"), out = []; let i = 0;
+    const list = (ordered, indent) => { const tag = ordered ? "ol" : "ul"; let h = `<${tag}>`;
+      while (i < L.length) { const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(L[i]); if (!m || m[1].length < indent) break;
+        if (m[1].length > indent) { h = h.replace(/<\/li>$/, "") + list(/\d/.test(m[2]), m[1].length) + "</li>"; continue; }
+        if (/\d/.test(m[2]) !== ordered) break;
+        h += `<li>${inlineMd(m[3])}</li>`; i++; }
+      return h + `</${tag}>`; };
+    while (i < L.length) {
+      const l = L[i];
+      if (!l.trim()) { i++; continue; }
+      let m;
+      if (/^```/.test(l)) { const b = []; i++; while (i < L.length && !/^```/.test(L[i])) b.push(L[i++]); i++; out.push(`<pre>${esc(b.join("\n"))}</pre>`); }
+      else if ((m = /^(#{1,6})\s+(.*)$/.exec(l))) { const n = Math.min(4, m[1].length); out.push(`<h${n}>${inlineMd(m[2])}</h${n}>`); i++; }
+      else if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(l)) { out.push("<hr>"); i++; }
+      else if (/^>\s?/.test(l)) { const b = []; while (i < L.length && /^>\s?/.test(L[i])) b.push(L[i++].replace(/^>\s?/, "")); out.push(`<blockquote>${inlineMd(b.join(" "))}</blockquote>`); }
+      else if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) out.push(list(/^\s*\d/.test(l), /^(\s*)/.exec(l)[1].length));
+      else if (/^\|.*\|\s*$/.test(l) && /^\|[\s:|-]+\|\s*$/.test(L[i + 1] || "")) { const rows = []; while (i < L.length && /^\|.*\|\s*$/.test(L[i])) { if (!/^\|[\s:|-]+\|\s*$/.test(L[i])) rows.push(L[i].trim().slice(1, -1).split("|").map(c => c.trim())); i++; }
+        out.push("<table>" + rows.map((r, k) => "<tr>" + r.map(c => k ? `<td>${inlineMd(c)}</td>` : `<th>${inlineMd(c)}</th>`).join("") + "</tr>").join("") + "</table>"); }
+      else { const b = []; while (i < L.length && L[i].trim() && !/^(#{1,6}\s|```|>\s?|\s*([-*+]|\d+[.)])\s+)/.test(L[i])) b.push(L[i++]); out.push(`<p>${inlineMd(b.join(" "))}</p>`); }
+    }
+    return out.join("");
+  }
+  function toMd(root) {
+    const inl = n => [...n.childNodes].map(c => { if (c.nodeType === 3) return c.nodeValue.replace(/\s+/g, " "); if (c.nodeType !== 1) return ""; const t = c.tagName, s = inl(c);
+      if (t === "BR") return "\n"; if (t === "IMG") return "(picture)"; if (!s.trim()) return s;
+      if (t === "B" || t === "STRONG") return `**${s.trim()}**`; if (t === "I" || t === "EM") return `*${s.trim()}*`; if (t === "CODE") return "`" + s + "`"; if (t === "S" || t === "DEL" || t === "STRIKE") return `~~${s}~~`;
+      if (t === "A") return `[${s}](${c.getAttribute("href")})`; return s; }).join("");
+    const blocks = (n, depth) => [...n.childNodes].map(c => {
+      if (c.nodeType === 3) return c.nodeValue.trim() ? c.nodeValue.trim() + "\n\n" : "";
+      if (c.nodeType !== 1) return "";
+      const t = c.tagName;
+      if (/^H[1-4]$/.test(t)) return "#".repeat(+t[1]) + " " + inl(c).trim() + "\n\n";
+      if (t === "UL" || t === "OL") return [...c.children].map((li, k) => { const sub = [...li.children].filter(x => /^(UL|OL)$/.test(x.tagName)); const own = li.cloneNode(true); own.querySelectorAll("ul,ol").forEach(x => x.remove());
+        return "  ".repeat(depth) + (t === "OL" ? `${k + 1}. ` : "- ") + inl(own).trim() + "\n" + sub.map(s => blocks({ childNodes: [s] }, depth + 1)).join(""); }).join("") + (depth ? "" : "\n");
+      if (t === "BLOCKQUOTE") return "> " + inl(c).trim() + "\n\n";
+      if (t === "PRE") return "```\n" + c.textContent.replace(/\n$/, "") + "\n```\n\n";
+      if (t === "HR") return "---\n\n";
+      if (t === "TABLE") { const rows = [...c.querySelectorAll("tr")].map(r => [...r.children].map(x => inl(x).trim().replace(/\|/g, "\\|").replace(/\n/g, " "))); if (!rows.length) return "";
+        return "| " + rows[0].join(" | ") + " |\n|" + rows[0].map(() => " --- |").join("") + "\n" + rows.slice(1).map(r => "| " + r.join(" | ") + " |\n").join("") + "\n"; }
+      if (t === "P" || t === "DIV") { const s = inl(c).trim(); return s ? s + "\n\n" : ""; }
+      return inl(c);
+    }).join("");
+    return blocks(root, 0).replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+  const fromText = t => String(t).replace(/\r/g, "").split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`).join("") || "";
+
+  // ----- the page
+  function setAll(html) { page.innerHTML = clean(html || ""); $("#scroll").scrollTop = 0; after(true); }
+  // Claude's edits replace parts of the page directly, so the editor's own undo can't take them back: this line can
+  function byClaude(before) {
+    document.querySelectorAll(".notice.claude").forEach(n => n.remove());
+    const n = el("div", "notice claude", `<span>Claude changed this document.</span><span class="sp"></span><button class="btn" data-a="undo">Undo its change</button><button class="btn quiet" data-a="ok">Keep</button>`);
+    n.querySelector("[data-a=undo]").onclick = () => { page.innerHTML = before; n.remove(); after(); };
+    n.querySelector("[data-a=ok]").onclick = () => n.remove();
+    $(".bar").after(n);
+  }
+  let footT = 0;
+  function after(noTouch) { if (!noTouch) touch(); clearTimeout(footT); footT = setTimeout(foot, 120); marks(); }
+  function foot() {
+    const t = plain().trim(), w = t ? t.split(/\s+/).length : 0;
+    $("#words").textContent = `${w.toLocaleString("en-US")} word${w === 1 ? "" : "s"} · ${t.length.toLocaleString("en-US")} characters`;
+  }
+  const blockOf = () => { let n = getSelection().anchorNode; while (n && n !== page) { if (n.nodeType === 1 && /^(P|H[1-4]|BLOCKQUOTE|PRE|LI|TD|TH|DIV)$/.test(n.tagName)) return n; n = n.parentNode; } return null; };
+  const cellOf = () => { let n = getSelection().anchorNode; while (n && n !== page) { if (n.nodeType === 1 && /^(TD|TH)$/.test(n.tagName)) return n; n = n.parentNode; } return null; };
+  function marks() {  // light the buttons that match where the cursor is
+    if (!page.contains(getSelection().anchorNode)) return;
+    document.querySelectorAll(".ib[data-c]").forEach(b => { if (!/undo|redo/.test(b.dataset.c)) { let on = false; try { on = document.queryCommandState(b.dataset.c); } catch (e) {} b.classList.toggle("on", on); } });
+    const b = blockOf(), t = b ? b.tagName.toLowerCase() : "p";
+    $("#block").value = ["h1", "h2", "h3", "blockquote", "pre"].includes(t) ? t : "p";
+    $("#where").textContent = cellOf() ? "In a table" : "";
+  }
+  document.addEventListener("selectionchange", marks);
+  page.addEventListener("input", () => after());
+  document.querySelectorAll(".ib[data-c]").forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => ex(b.dataset.c); });
+  $("#block").onchange = e => {  // a heading can't sit inside a list item: take the line out of its list first
+    const b = blockOf(), li = b?.closest?.("li");
+    if (li && e.target.value !== "p") { page.focus(); document.execCommand(li.parentNode.tagName === "OL" ? "insertOrderedList" : "insertUnorderedList"); }
+    ex("formatBlock", `<${e.target.value}>`);
+  };
+  const keepSel = b => { b.onmousedown = e => e.preventDefault(); };
+  ["#color", "#align", "#link", "#insert"].forEach(s => keepSel($(s)));
+  $("#color").onclick = () => {
+    const css = () => document.execCommand("styleWithCSS", false, true);
+    const m = menu($("#color"), [{ head: "Text" },
+      ...[["Default", ""], ["Red", "#C62828"], ["Orange", "#C2410C"], ["Green", "#1B7F3B"], ["Blue", "#1565C0"], ["Purple", "#6A1B9A"], ["Gray", "#6B7780"]].map(([n, c]) => ({ label: n, swatch: c || "var(--text)", run: () => { css(); ex("foreColor", c || getComputedStyle(page).color); } })),
+      { head: "Highlight" },
+      ...[["Yellow", "#FFF59D"], ["Green", "#B9F6CA"], ["Blue", "#BBDEFB"], ["Pink", "#F8BBD0"]].map(([n, c]) => ({ label: n, swatch: c, run: () => { css(); if (!document.execCommand("hiliteColor", false, c)) document.execCommand("backColor", false, c); document.execCommand("foreColor", false, "#10181C"); after(); } })),
+      { label: "No highlight", run: () => { css(); if (!document.execCommand("hiliteColor", false, "transparent")) document.execCommand("backColor", false, "transparent"); document.execCommand("foreColor", false, getComputedStyle(page).color); after(); } }]);
+    m.onmousedown = e => e.preventDefault();
+  };
+  $("#align").onclick = () => { const m = menu($("#align"), [["Left", "justifyLeft"], ["Center", "justifyCenter"], ["Right", "justifyRight"], ["Justified", "justifyFull"]].map(([n, c]) => ({ label: n, run: () => ex(c) })).concat(["-", { label: "Indent", key: "Tab", run: () => ex("indent") }, { label: "Outdent", key: "⇧Tab", run: () => ex("outdent") }])); m.onmousedown = e => e.preventDefault(); };
+  async function link() {
+    const sel = getSelection(); if (!sel.rangeCount) return;
+    const rg = sel.getRangeAt(0).cloneRange(); let a = sel.anchorNode; while (a && a !== page && a.tagName !== "A") a = a.parentNode;
+    const url = await ask("Link address", [["Cancel", null], ...(a?.tagName === "A" ? [["Remove link", "none"]] : []), ["Add link", true, "primary"]], a?.tagName === "A" ? a.getAttribute("href") : "https://");
+    page.focus(); sel.removeAllRanges(); sel.addRange(rg);
+    if (url === "none") return ex("unlink");
+    if (!url || !/^(https?:\/\/|mailto:)\S+/i.test(url.trim())) { if (url) toast("A link needs to start with https:// or mailto:"); return; }
+    if (rg.collapsed) ex("insertHTML", `<a href="${esc(url.trim())}">${esc(url.trim())}</a>`); else ex("createLink", url.trim());
+  }
+  $("#link").onclick = link;
+  const tableHtml = (r, c) => "<table>" + Array.from({ length: r }, (_, y) => "<tr>" + Array.from({ length: c }, () => y ? "<td><br></td>" : "<th><br></th>").join("") + "</tr>").join("") + "</table><p><br></p>";
+  $("#insert").onclick = () => {
+    const td = cellOf(), tr = td?.parentNode, tb = td?.closest("table");
+    const m = menu($("#insert"), [
+      { label: "Table, 2 × 2", run: () => ex("insertHTML", tableHtml(2, 2)) }, { label: "Table, 3 × 3", run: () => ex("insertHTML", tableHtml(3, 3)) }, { label: "Table, 4 × 5", run: () => ex("insertHTML", tableHtml(4, 5)) },
+      ...(td ? ["-", { label: "Add a row below", run: () => { const n = tr.cloneNode(true); [...n.children].forEach(c => { c.innerHTML = "<br>"; if (c.tagName === "TH") { const d = document.createElement("td"); d.innerHTML = "<br>"; c.replaceWith(d); } }); tr.after(n); after(); } },
+        { label: "Add a column to the right", run: () => { const i = [...tr.children].indexOf(td); tb.querySelectorAll("tr").forEach(r => { const c = r.children[Math.min(i, r.children.length - 1)], n = document.createElement(c.tagName); n.innerHTML = "<br>"; c.after(n); }); after(); } },
+        { label: "Delete this row", run: () => { tr.remove(); if (!tb.querySelector("tr")) tb.remove(); after(); } },
+        { label: "Delete this column", run: () => { const i = [...tr.children].indexOf(td); tb.querySelectorAll("tr").forEach(r => r.children[i]?.remove()); if (!tb.querySelector("td,th")) tb.remove(); after(); } },
+        { label: "Delete the table", run: () => { tb.remove(); after(); } }] : []),
+      "-", { label: "Picture…", run: async () => { const sel = getSelection(), rg = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null; const r = await call("image"); if (!r) return; if (r.error) return toast(r.error, 4000); page.focus(); if (rg) { sel.removeAllRanges(); sel.addRange(rg); } ex("insertHTML", `<img src="${r.src}">`); } },
+      { label: "Line", run: () => ex("insertHTML", "<hr><p><br></p>") }, { label: "Page break", run: () => ex("insertHTML", '<hr class="page-break"><p><br></p>') }]);
+    m.onmousedown = e => e.preventDefault();
+  };
+  page.addEventListener("keydown", e => {
+    if (e.key === "Tab") { e.preventDefault(); const td = cellOf(); if (td) { const cells = [...td.closest("table").querySelectorAll("td,th")], n = cells[cells.indexOf(td) + (e.shiftKey ? -1 : 1)]; if (n) { const r = document.createRange(); r.selectNodeContents(n); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); } return; } ex(e.shiftKey ? "outdent" : "indent"); }
+    else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); link(); }
+  });
+  page.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const img = [...(cd.files || [])].find(f => /^image\/(png|jpeg|gif)$/.test(f.type));
+    if (img && !cd.getData("text/html")) { e.preventDefault(); const fr = new FileReader(); fr.onload = () => ex("insertHTML", `<img src="${fr.result}">`); fr.readAsDataURL(img); return; }
+    const html = cd.getData("text/html");
+    if (html) { e.preventDefault(); ex("insertHTML", clean(html)); }
+  });
+  page.addEventListener("click", e => { if (e.target.tagName === "A" && (e.metaKey || e.ctrlKey)) call("openUrl", { url: e.target.getAttribute("href") }); });
+
+  // the words on the page as plain text (innerText is empty while the Desk is on another editor, so not that)
+  const plain = () => { const d = page.cloneNode(true); d.querySelectorAll("br").forEach(b => b.replaceWith("\n")); d.querySelectorAll("td,th").forEach(c => c.append("\t"));
+    d.querySelectorAll("p,div,h1,h2,h3,h4,li,blockquote,pre,tr,hr").forEach(b => b.append("\n")); return d.textContent.replace(/\t\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim() + "\n"; };
+  Desk.start({
+    types: [["Word document", "docx"], ["Web page", "html"], ["Markdown", "md"], ["Plain text", "txt"]],
+    canSave: ext => [".docx", ".html", ".htm", ".md", ".txt"].includes(ext),
+    blank() { setAll(""); },
+    load(r) { setAll(r.html != null ? r.html : /\.html?$/i.test(r.name) ? r.text : /\.(md|markdown)$/i.test(r.name) ? fromMd(r.text) : fromText(r.text)); },
+    dump(ext) { return ext === ".md" ? { text: toMd(page) } : ext === ".txt" ? { text: plain() } : { html: clean(page.innerHTML), text: plain() }; },
+    draft() { const d = Desk.doc; return { doc: { path: d.path, name: d.name, dirty: d.dirty, mtime: d.mtime }, paths: d.path ? [d.path] : [], html: page.innerHTML.length < 6000000 ? page.innerHTML : null }; },
+    async restore(d) {
+      if (d.html != null) { page.innerHTML = clean(d.html); if (d.doc) Desk.use({ ...Desk.blankDoc(), ...d.doc }); after(true); return; }
+      if (d.doc?.path) { const r = await call("read", { path: d.doc.path }); if (r && !r.error) await Desk.load(r); }
+      after(true);
+    },
+    forChat() { const d = Desk.doc, s = String(getSelection()).trim(); return `In Folio on the Desk, ${d.name || "an untitled document"}${d.path ? ` (${d.path})` : ""}${s ? `, with this selected: “${s.length > 300 ? s.slice(0, 300) + "…" : s}”` : ""}: `; },
+    state() { const t = plain().trim(); return { words: t ? t.split(/\s+/).length : 0, headings: [...page.querySelectorAll("h1,h2,h3")].slice(0, 40).map(h => `${h.tagName.toLowerCase()}: ${h.textContent.trim().slice(0, 80)}`), selection: String(getSelection()).slice(0, 2000) || null }; },
+    read(a) {
+      const as = a.as || "markdown";
+      const body = as === "html" ? clean(page.innerHTML).replace(/src="data:image[^"]{200,}"/g, 'src="(picture)"') : as === "text" ? plain() : toMd(page);
+      return { name: Desk.doc.name || "Untitled", path: Desk.doc.path, unsaved: Desk.doc.dirty, as, content: body.length > 250000 ? body.slice(0, 250000) + "\n… (cut)" : body };
+    },
+    write(a) {
+      const html = a.html != null ? String(a.html) : a.markdown != null ? fromMd(a.markdown) : null;
+      const add = a.append_html != null ? String(a.append_html) : a.append_markdown != null ? fromMd(a.append_markdown) : null;
+      const before = page.innerHTML;
+      if (html != null) { setAll(html); byClaude(before); return { ok: true }; }
+      if (add != null) { page.insertAdjacentHTML("beforeend", clean(add)); $("#scroll").scrollTop = $("#scroll").scrollHeight; after(true); byClaude(before); return { ok: true }; }
+      if (a.find != null) {
+        const find = String(a.find), hits = []; const w = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+        for (let n; (n = w.nextNode());) { let i = -1; while ((i = n.nodeValue.indexOf(find, i + 1)) >= 0) hits.push([n, i]); }
+        if (!hits.length) return { error: "That text isn't in the document as one run of plain text (it may cross bold or a link). Read it as html and write the whole document back, or match a shorter piece." };
+        if (hits.length > 1 && !a.all) return { error: `That text appears ${hits.length} times. Give more of it so it matches once, or pass all: true.` };
+        for (const [n, i] of (a.all ? hits.reverse() : hits.slice(0, 1))) { const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + find.length); const s = getSelection(); page.focus(); s.removeAllRanges(); s.addRange(r); document.execCommand("insertText", false, String(a.replace ?? "")); }
+        after(true); byClaude(before); return { ok: true, replaced: a.all ? hits.length : 1 };
+      }
+      return { error: "Pass markdown or html (the whole document), append_markdown or append_html, or find + replace." };
+    },
+  });
+})();
+</script>

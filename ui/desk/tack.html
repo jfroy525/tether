@@ -1,0 +1,111 @@
+<style>
+  #board { position: absolute; inset: 0; overflow: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(210px * var(--scale)), 1fr)); gap: 14px; align-content: start; }
+  .note { --c: #FFE98A; position: relative; display: flex; flex-direction: column; min-height: calc(150px * var(--scale)); padding: 10px 12px 8px; border-radius: 4px 4px 14px 4px; background: var(--c); color: #1B2024;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .12), 0 6px 14px rgba(0, 0, 0, .14); transition: transform .2s var(--soft), box-shadow .2s var(--soft), opacity .25s; animation: stick .3s var(--spring); }
+  @keyframes stick { from { opacity: 0; transform: scale(.9) rotate(-2deg); } }
+  .note:hover { transform: translateY(-2px); box-shadow: 0 1px 1px rgba(0, 0, 0, .12), 0 12px 22px rgba(0, 0, 0, .2); }
+  .note.drag { opacity: .35; } .note.over { outline: 2px dashed var(--accent); outline-offset: 3px; }
+  .note.gone { opacity: 0; transform: scale(.9); }
+  .note.done .tx { text-decoration: line-through; opacity: .55; }
+  .note .tx { flex: 1; min-height: 60px; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; font-size: var(--fs-b); cursor: text; -webkit-user-select: text; user-select: text; }
+  .note .tx:empty::before { content: "Write a note…"; opacity: .45; }
+  .note .row { display: flex; align-items: center; gap: 2px; margin-top: 6px; height: 24px; }
+  .note .by { font-size: 11px; opacity: .6; margin-right: auto; white-space: nowrap; }
+  .note .nb { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: #1B2024; opacity: 0; cursor: pointer; transition: opacity .15s, background .15s; }
+  .note:hover .nb, .note:focus-within .nb, .note .nb.on { opacity: .7; } .note .nb:hover { opacity: 1; background: rgba(0, 0, 0, .09); }
+  .note .nb svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .dots { display: flex; gap: 5px; align-items: center; }
+  .dots i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .18); cursor: pointer; transition: transform .15s var(--spring); } .dots i:hover { transform: scale(1.25); }
+  .none { grid-column: 1 / -1; padding: 60px 0; text-align: center; color: var(--text-3); }
+  #q { width: 170px; }
+</style>
+<div class="bar">
+  <button class="btn primary" id="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New note</button>
+  <div class="dots" id="newcolor" title="Color for new notes"></div>
+  <span class="sp"></span>
+  <select class="pick" id="who" title="Which notes to show"><option value="">All notes</option><option value="you">Mine</option><option value="claude">Claude's</option><option value="open">Not done</option></select>
+  <input class="field" id="q" placeholder="Find a note" spellcheck="false">
+</div>
+<div class="grow"><div id="board"></div></div>
+<div class="foot"><span id="count"></span></div>
+<script>
+(() => {
+  const { $, el, toast, touch } = Desk;
+  const COLORS = { yellow: "#FFE98A", pink: "#FFC4D6", blue: "#BFE0FF", green: "#C4F0C8", purple: "#DCCBFF", gray: "#E4E7EA" };
+  let notes = [], color = "yellow", seq = 1, dragId = null;
+  const IC = { ask: '<svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.600l2.800 2.800M15.600 15.600l2.800 2.800M18.400 5.600l-2.800 2.800M8.400 15.600l-2.800 2.800"/></svg>',
+    done: '<svg viewBox="0 0 24 24"><path d="m5 12.500 4.500 4.500L19 7.500"/></svg>', del: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
+    color: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.500"/></svg>' };
+  const save = () => { touch(false); count(); };
+  const count = () => { const open = notes.filter(n => !n.done).length; $("#count").textContent = notes.length ? `${notes.length} note${notes.length === 1 ? "" : "s"}, ${open} not done` : "No notes yet"; };
+  const dots = (box, pick) => { box.innerHTML = ""; for (const [k, c] of Object.entries(COLORS)) { const d = el("i"); d.style.background = c; d.title = k; d.onclick = e => { e.stopPropagation(); pick(k); }; box.appendChild(d); } };
+  function card(n) {
+    const c = el("div", "note" + (n.done ? " done" : "")); c.dataset.id = n.id; c.style.setProperty("--c", COLORS[n.color] || COLORS.yellow); c.draggable = true;
+    c.innerHTML = `<div class="tx" contenteditable="plaintext-only" spellcheck="true"></div><div class="row"><span class="by"></span>
+      <button class="nb" data-a="ask" title="Put this note in your message to Claude">${IC.ask}</button><button class="nb" data-a="color" title="Color">${IC.color}</button>
+      <button class="nb${n.done ? " on" : ""}" data-a="done" title="${n.done ? "Not done" : "Done"}">${IC.done}</button><button class="nb" data-a="del" title="Delete">${IC.del}</button></div>`;
+    const tx = c.querySelector(".tx"); tx.textContent = n.text;
+    c.querySelector(".by").textContent = n.by === "claude" ? "From Claude" : "";
+    tx.oninput = () => { n.text = tx.innerText.replace(/\n$/, ""); n.ts = Date.now(); save(); };
+    tx.onfocus = () => { c.draggable = false; }; tx.onblur = () => { c.draggable = true; if (!n.text.trim() && n.fresh) remove(n.id); n.fresh = false; };
+    c.querySelector("[data-a=ask]").onclick = () => Desk.toChat(`About this note on Tack (“${n.text.trim().slice(0, 600)}”): `);
+    c.querySelector("[data-a=done]").onclick = () => { n.done = !n.done; draw(); save(); };
+    c.querySelector("[data-a=del]").onclick = () => remove(n.id);
+    c.querySelector("[data-a=color]").onclick = e => { const m = Desk.menu(e.currentTarget, Object.keys(COLORS).map(k => ({ label: k[0].toUpperCase() + k.slice(1), swatch: COLORS[k], run: () => { n.color = k; draw(); save(); } }))); };
+    c.ondragstart = e => { dragId = n.id; c.classList.add("drag"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", n.text); };
+    c.ondragend = () => { dragId = null; document.querySelectorAll(".note").forEach(x => x.classList.remove("drag", "over")); };
+    c.ondragover = e => { if (dragId && dragId !== n.id) { e.preventDefault(); c.classList.add("over"); } };
+    c.ondragleave = () => c.classList.remove("over");
+    c.ondrop = e => { e.preventDefault(); const a = notes.findIndex(x => x.id === dragId), b = notes.findIndex(x => x.id === n.id); if (a < 0 || b < 0) return; const [m] = notes.splice(a, 1); notes.splice(b, 0, m); draw(); save(); };
+    return c;
+  }
+  function draw() {
+    const q = $("#q").value.trim().toLowerCase(), who = $("#who").value, box = $("#board");
+    const list = notes.filter(n => (!q || n.text.toLowerCase().includes(q)) && (!who || (who === "open" ? !n.done : (n.by || "you") === who)));
+    const have = new Map([...box.querySelectorAll(".note")].map(c => [c.dataset.id, c]));
+    box.querySelector(".none")?.remove();
+    for (const [id, c] of have) if (!list.some(n => String(n.id) === id)) c.remove();
+    list.forEach((n, i) => {
+      let c = have.get(String(n.id));
+      const focused = c && c.contains(document.activeElement);
+      if (!c || !focused) { const nc = card(n); if (c) { nc.style.animation = "none"; c.replaceWith(nc); } c = nc; }
+      if (box.children[i] !== c) box.insertBefore(c, box.children[i] || null);
+    });
+    if (!list.length) box.appendChild(el("div", "none", notes.length ? "No note matches." : "Nothing stuck here yet. Add a note, or ask Claude to leave you one."));
+    count();
+  }
+  function add(text = "", by = "you", col) {
+    const n = { id: seq++, text: String(text), color: COLORS[col] ? col : color, by, done: false, ts: Date.now(), fresh: !text };
+    notes.unshift(n); return n;
+  }
+  function remove(id) {
+    const c = document.querySelector(`.note[data-id="${id}"]`); notes = notes.filter(n => n.id !== id);
+    if (c) { c.classList.add("gone"); setTimeout(() => { draw(); }, 220); } else draw();
+    save();
+  }
+  $("#add").onclick = () => { $("#q").value = ""; $("#who").value = ""; const n = add(); draw(); save(); document.querySelector(`.note[data-id="${n.id}"] .tx`)?.focus(); };
+  dots($("#newcolor"), k => { color = k; $("#add").style.boxShadow = `inset 0 -3px 0 ${COLORS[k]}`; save(); });
+  $("#q").oninput = draw; $("#who").onchange = draw;
+  const out = n => ({ id: n.id, text: n.text, color: n.color, from: n.by === "claude" ? "claude" : "user", done: !!n.done });
+
+  Desk.start({
+    noFiles: true, types: [],
+    blank() {}, load() {}, dump() { return {}; },
+    draft() { return { notes: notes.map(({ fresh, ...n }) => n), seq, color }; },
+    restore(d) { notes = Array.isArray(d.notes) ? d.notes : []; seq = Math.max(d.seq || 1, 1 + Math.max(0, ...notes.map(n => +n.id || 0))); color = COLORS[d.color] ? d.color : "yellow"; $("#add").style.boxShadow = `inset 0 -3px 0 ${COLORS[color]}`; draw(); },
+    onDoc() {},
+    forChat() { return "About my notes on Tack: "; },
+    state() { return { notes: notes.length, not_done: notes.filter(n => !n.done).length, from_claude: notes.filter(n => n.by === "claude").length }; },
+    read() { return { notes: notes.map(out) }; },
+    write(a) {
+      const made = [];
+      for (const x of [].concat(a.add || [])) { const t = typeof x === "string" ? x : x?.text; if (!String(t || "").trim()) continue; made.push(add(String(t).slice(0, 4000), "claude", typeof x === "object" ? x.color : "").id); }
+      for (const u of [].concat(a.update || [])) { const n = notes.find(k => k.id === +u.id); if (!n) return { error: `No note with id ${u.id}. Read the notes for their ids.` }; if (u.text != null) n.text = String(u.text).slice(0, 4000); if (COLORS[u.color]) n.color = u.color; if (u.done != null) n.done = !!u.done; n.ts = Date.now(); }
+      for (const id of [].concat(a.remove || [])) { if (!notes.some(k => k.id === +id)) return { error: `No note with id ${id}.` }; notes = notes.filter(k => k.id !== +id); }
+      if (!made.length && !a.update && !a.remove) return { error: "Pass add (a list of notes: text, optional color), update ({id, text, color, done}) or remove (ids)." };
+      $("#q").value = ""; $("#who").value = ""; draw(); save();
+      return { ok: true, ...(made.length ? { added_ids: made } : {}), notes: notes.length };
+    },
+  });
+})();
+</script>

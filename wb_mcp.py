@@ -76,6 +76,20 @@ SPECS = [
          "note": {"type": "string", "description": "what this version changed, a few words (optional on the first)"},
          "look": {"type": "boolean", "description": "return the picture (default true for HTML and SVG)"}},
          "required": ["path"]}},
+    {"name": "desk",
+     "description": "Work in the Desk, Tether's built-in editors beside the chat, when the user mentions them or asks you to make or "
+                    "change something there. Apps: slate (text and code, several files in tabs), ledger (spreadsheets, .xlsx/.csv), "
+                    "folio (documents, .docx/.md), tack (sticky notes). Actions: state (what's open in all four; no app needed), "
+                    "open (a path, or none for a new blank file), read, write, save (path = save under that name). The user sees "
+                    "each change live. write takes, for slate: text (whole file, or with from_line/to_line), find + replace, append; "
+                    "ledger: cells {\"B2\": \"=SUM(A1:A9)\"}, rows + at, clear, sheet, add_sheet, bold, widths; folio: markdown or html "
+                    "(whole document), append_markdown, find + replace; tack: add [{text, color}], update {id, text, done}, remove [ids]. "
+                    "read takes, for slate: file, from_line, to_line; ledger: sheet, range; folio: as (markdown, html or text).",
+     "inputSchema": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["state", "open", "read", "write", "save"]},
+         "app": {"type": "string", "enum": ["slate", "ledger", "folio", "tack"]},
+         "path": {"type": "string", "description": "for open and save: the file, absolute or relative to the working folder"}},
+         "required": ["action"], "additionalProperties": True}},
     {"name": "recall",
      "description": "Look something up in this session's full saved history, including parts dropped by compaction "
                     "and any earlier session this one continues. Ask a specific question (\"which warehouse id did we "
@@ -198,6 +212,15 @@ def call(name: str, args: dict) -> tuple[bool, str]:
             return (True, recall.lookup(sid, q)) if q else (False, 'Pass the question as {"question": "..."}.')
         # the working notes, the same bounded set a fresh session gets; older ones are archived and recall searches them
         return True, notes.render_lineage([sid]) or "No notes yet. Tether writes them as the session grows; use recall meanwhile."
+    if name == "desk":
+        import desk  # noqa: E401 - only loaded when asked
+        a = dict(args or {})
+        if a.get("path"):
+            p = Path(str(a["path"])).expanduser()
+            a["path"] = str(p if p.is_absolute() else Path.cwd() / p)
+        if a.get("action") == "open" and a.get("path") and not Path(a["path"]).is_file():
+            return False, f"No file at {a['path']}. To start a new one, open with no path, write to it, then save with a path."
+        return desk.ask(SUPPORT, os.environ.get("ANVIL_SID", ""), a)
     if name == "show_table":
         rows = args.get("rows") or []
         return True, f"Showing {len(rows)} row(s) in the app. Don't repeat them; give the takeaway."

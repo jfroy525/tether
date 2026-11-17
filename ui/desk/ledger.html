@@ -1,0 +1,262 @@
+<style>
+  .fx { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
+  .fx #cell { width: 74px; text-align: center; font: var(--fs-s) var(--mono); color: var(--text-2); }
+  .fx .f { color: var(--text-3); font-style: italic; font-family: Georgia, serif; padding: 0 2px; }
+  .fx #formula { flex: 1; font: var(--fs) var(--mono); }
+  #grid { position: absolute; inset: 0; -webkit-user-select: none; user-select: none; }
+  #grid .jexcel_container { display: block; width: 100%; height: 100%; padding: 0; }
+  #grid .jexcel_content { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; overflow: auto; padding: 0; box-shadow: none; }
+  #grid .jexcel { border-color: var(--line-2); font: var(--fs) var(--font); border-top: 0; border-left: 0; }
+  #grid .jexcel > thead > tr > td { background: var(--bg-2); color: var(--text-3); border-color: var(--line-2); font-weight: 500; padding: 3px 4px; }
+  #grid .jexcel > tbody > tr > td { background: var(--bg); color: var(--text); border-color: var(--line); padding: 3px 6px; line-height: 1.35; }
+  #grid .jexcel > tbody > tr > td:first-child { background: var(--bg-2); color: var(--text-3); border-color: var(--line-2); }
+  #grid .jexcel > thead > tr > td.selected, #grid .jexcel > tbody > tr.selected > td:first-child { background: var(--accent-soft); color: var(--accent); }
+  #grid .jexcel > tbody > tr > td.highlight { background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
+  #grid .jexcel .highlight-top { border-top-color: var(--accent); box-shadow: 0 -1px var(--accent); }
+  #grid .jexcel .highlight-left { border-left-color: var(--accent); box-shadow: -1px 0 var(--accent); }
+  #grid .jexcel .highlight-right { border-right-color: var(--accent); } #grid .jexcel .highlight-bottom { border-bottom-color: var(--accent); }
+  #grid .jexcel .highlight-top.highlight-left { box-shadow: -1px -1px var(--accent); }
+  #grid .jexcel_corner { background: var(--accent); border-color: var(--bg); }
+  #grid .jexcel > tbody > tr > td.readonly { color: var(--text-3); }
+  #grid .jexcel > tbody > tr > td > input, #grid .jexcel .editor > input, #grid .jexcel .editor > textarea { background: var(--bg); color: var(--text); font: var(--fs) var(--font); outline: 0; border: 0; -webkit-user-select: text; user-select: text; }
+  #grid .jexcel > tbody > tr > td.editor { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #grid .jexcel .copying-top, #grid .jexcel .copying-left, #grid .jexcel .copying-right, #grid .jexcel .copying-bottom { border-color: var(--text-3); border-style: dashed; }
+  .jcontextmenu { background: var(--bg-2) !important; color: var(--text) !important; border: 1px solid var(--line-2) !important; border-radius: 10px; padding: 5px; box-shadow: 0 12px 34px rgba(0,0,0,.28) !important; font: var(--fs) var(--font); }
+  .jcontextmenu > div { border-radius: 6px; padding: 6px 10px 6px 12px !important; }
+  .jcontextmenu > div:hover { background: var(--hover) !important; } .jcontextmenu > div a { color: var(--text) !important; } .jcontextmenu > div span { color: var(--text-3) !important; }
+  .jcontextmenu hr { border-color: var(--line) !important; }
+  .sheets { display: flex; align-items: stretch; gap: 2px; height: 30px; padding: 0 6px; border-top: 1px solid var(--line); overflow-x: auto; flex: none; scrollbar-width: none; }
+  .sheets::-webkit-scrollbar { display: none; }
+  .sh { padding: 0 12px; border: 0; border-top: 2px solid transparent; background: none; color: var(--text-3); cursor: pointer; flex: none; white-space: nowrap; animation: fade .2s; }
+  .sh:hover { color: var(--text); } .sh.on { color: var(--text); border-top-color: var(--accent); font-weight: 600; }
+  .sheets .plus { align-self: center; }
+  .empty-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
+</style>
+<div class="bar">
+  <button class="name" id="doc-name"><span class="dot"></span><span class="t"></span><svg class="chev" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" id="undo" title="Undo (⌘Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button class="ib" id="redo" title="Redo (⇧⌘Z)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" data-st="font-weight:bold" title="Bold (⌘B)"><b>B</b></button>
+  <button class="ib" data-st="font-style:italic" title="Italic (⌘I)"><i style="font-family:Georgia,serif">I</i></button>
+  <button class="ib" data-st="text-align:left" title="Align left"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+  <button class="ib" data-st="text-align:center" title="Center"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M5.5 18h13"/></svg></button>
+  <button class="ib" data-st="text-align:right" title="Align right"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 12h10M7 18h13"/></svg></button>
+  <button class="ib" id="fill" title="Highlight the selected cells"><svg viewBox="0 0 24 24"><path d="m5 14 7-9 7 9a7 7 0 0 1-14 0z"/></svg></button>
+  <span class="div"></span>
+  <button class="ib" id="rows" title="Rows and columns"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 12h17M12 4.5v15"/></svg></button>
+  <button class="ib" id="sort" title="Sort by the selected column"><svg viewBox="0 0 24 24"><path d="M7 5v14m0 0-3-3m3 3 3-3M14 7h6M14 12h4.5M14 17h3"/></svg></button>
+  <span class="sp"></span>
+  <button class="btn" id="ask-claude" title="Put this sheet, and the selected cells, in your message to Claude"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg><span class="l">Ask Claude</span></button>
+</div>
+<div class="fx"><input class="field" id="cell" readonly value="A1"><span class="f">fx</span><input class="field" id="formula" spellcheck="false" placeholder="Type a value, or a formula starting with ="></div>
+<div class="grow"><div id="grid"></div></div>
+<div class="sheets" id="sheets"></div>
+<div class="foot"><span id="dims"></span><span class="sp"></span><span id="stats"></span></div>
+<script>
+(() => {
+  const { $, el, toast, menu, ask, touch } = Desk;
+  const MAXR = 20000, MAXC = 200, MINR = 50, MINC = 14;
+  const colName = i => { let s = ""; for (i++; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; };
+  const colIdx = s => [...s.toUpperCase()].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+  const ref = (x, y) => colName(x) + (y + 1);
+  const parseRef = r => { const m = /^\$?([A-Za-z]{1,3})\$?(\d+)$/.exec(String(r).trim()); return m ? [colIdx(m[1]), +m[2] - 1] : null; };
+  const parseRange = r => { const [a, b] = String(r).split(":"), p = parseRef(a), q = parseRef(b || a); return p && q ? [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[0], q[0]), Math.max(p[1], q[1])] : null; };
+  const blankSheet = name => ({ name, data: [[""]], widths: [], style: {} });
+  let sheets = [blankSheet("Sheet1")], at = 0, jx = null, sel = [0, 0, 0, 0], quiet = false;
+
+  // trailing empty rows and columns aren't part of the sheet
+  function used(data) {
+    let r = 0, c = 0;
+    data.forEach((row, y) => row.forEach((v, x) => { if (v !== "" && v != null) { if (y + 1 > r) r = y + 1; if (x + 1 > c) c = x + 1; } }));
+    return [r, c];
+  }
+  const trim = data => { const [r, c] = used(data); return data.slice(0, Math.max(1, r)).map(row => row.slice(0, Math.max(1, c)).map(v => v ?? "")); };
+  function keep() {  // the grid's state back into the sheet's record
+    if (!jx) return;
+    const s = sheets[at];
+    s.data = trim(jx.getData());
+    s.widths = s.data[0].map((_, x) => parseInt(jx.getWidth(x)) || 100);
+    const st = jx.getStyle() || {}; s.style = {};
+    for (const [k, v] of Object.entries(st)) { const own = String(v || "").replace(/text-align:\s*left;?/g, "").trim(); if (own) s.style[k] = own; }  // the grid's own default isn't yours
+  }
+  function draw() {
+    const s = sheets[at], box = $("#grid");
+    if (jx) { try { jspreadsheet.destroy(box, false); } catch (e) {} jx = null; }
+    box.innerHTML = "";
+    const [r, c] = used(s.data), cols = Math.max(MINC, c + 3), rows = Math.max(MINR, r + 20);
+    const data = s.data.map(row => row.slice());
+    quiet = true;
+    jx = jspreadsheet(box, {
+      data, minDimensions: [cols, rows], defaultColWidth: 100, tableOverflow: true, lazyLoading: r > 400, loadingSpin: false,
+      columns: Array.from({ length: cols }, (_, x) => ({ width: s.widths[x] || 100, type: "text", align: "left" })), style: s.style,
+      allowExport: false, about: false, columnDrag: true, wordWrap: false, parseFormulas: true, autoCasting: false, stripHTML: true,
+      onselection: (_, x1, y1, x2, y2) => { sel = [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)]; onSel(); },
+      onchange: changed, onafterchanges: changed, oninsertrow: changed, ondeleterow: changed, oninsertcolumn: changed, ondeletecolumn: changed, onsort: changed,
+      onmoverow: changed, onmovecolumn: changed, onresizecolumn: changed, onchangestyle: changed, onundo: changed, onredo: changed, onpaste: changed, onmerge: changed,
+    });
+    quiet = false;
+    jx.updateSelectionFromCoords(Math.min(sel[0], cols - 1), Math.min(sel[1], rows - 1), Math.min(sel[0], cols - 1), Math.min(sel[1], rows - 1));
+    drawSheets(); foot();
+  }
+  function changed() { if (quiet) return; touch(); onSel(); foot(); }
+  const raw = (x, y) => { const v = jx.getValueFromCoords(x, y); return v == null ? "" : String(v); };
+  const shownVal = (x, y) => { const v = jx.getValueFromCoords(x, y, true); return v == null ? "" : v; };
+  function onSel() {
+    const [x1, y1, x2, y2] = sel;
+    $("#cell").value = x1 === x2 && y1 === y2 ? ref(x1, y1) : `${ref(x1, y1)}:${ref(x2, y2)}`;
+    if (document.activeElement !== $("#formula")) $("#formula").value = raw(x1, y1);
+    let n = 0, sum = 0, cnt = 0;
+    if ((x2 - x1 + 1) * (y2 - y1 + 1) <= 40000 && (x1 !== x2 || y1 !== y2))
+      for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) { const v = shownVal(x, y); if (v === "") continue; cnt++; const f = Number(String(v).replace(/[$,%\s]/g, "")); if (v !== "" && !isNaN(f)) { n++; sum += f; } }
+    const fmt = v => (Math.round(v * 1e6) / 1e6).toLocaleString("en-US");
+    $("#stats").textContent = n > 1 ? `Sum ${fmt(sum)} · Average ${fmt(sum / n)} · Count ${cnt}` : cnt > 1 ? `Count ${cnt}` : "";
+  }
+  function foot() { const d = jx ? trim(jx.getData()) : sheets[at].data, [r, c] = used(d); $("#dims").textContent = r ? `${r.toLocaleString("en-US")} rows × ${c} columns` : "Empty sheet"; }
+  function drawSheets() {
+    const box = $("#sheets"); box.innerHTML = "";
+    sheets.forEach((s, i) => {
+      const b = el("button", "sh" + (i === at ? " on" : "")); b.textContent = s.name; b.title = "Double-click to rename; right-click for more";
+      b.onclick = () => { if (i !== at) goSheet(i); };
+      b.ondblclick = () => renameSheet(i);
+      b.oncontextmenu = e => { e.preventDefault(); menu(b, [{ label: "Rename…", run: () => renameSheet(i) }, { label: "Duplicate", run: () => { keep(); sheets.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(sheets[i])), name: unique(sheets[i].name + " copy") }); at = i + 1; draw(); touch(); } },
+        { label: "Delete", off: sheets.length < 2, run: async () => { if (await ask(`Delete the sheet <b>${Desk.esc(s.name)}</b>?`, [["Cancel", null], ["Delete", true, "primary"]])) { keep(); sheets.splice(i, 1); at = Math.min(at, sheets.length - 1); jx = null; $("#grid").innerHTML = ""; draw(); touch(); } } }]); };
+      box.appendChild(b);
+    });
+    const p = el("button", "ib plus", "+"); p.title = "Add a sheet"; p.onclick = () => { keep(); sheets.push(blankSheet(unique("Sheet" + (sheets.length + 1)))); at = sheets.length - 1; sel = [0, 0, 0, 0]; draw(); touch(); }; box.appendChild(p);
+  }
+  const unique = n => { let k = n, i = 2; while (sheets.some(s => s.name === k)) k = `${n} ${i++}`; return k.slice(0, 31); };
+  async function renameSheet(i) {
+    const n = await ask("Name this sheet", [["Cancel", null], ["Rename", true, "primary"]], sheets[i].name);
+    if (!n || !String(n).trim()) return;
+    sheets[i].name = String(n).trim().replace(/[\\/?*[\]:]/g, " ").slice(0, 31); drawSheets(); touch();
+  }
+  function goSheet(i) { keep(); at = i; sel = [0, 0, 0, 0]; draw(); Desk.saveDraft(); }
+
+  // ----- toolbar
+  $("#undo").onclick = () => jx.undo(); $("#redo").onclick = () => jx.redo();
+  const cellsOf = () => { const out = []; for (let y = sel[1]; y <= sel[3]; y++) for (let x = sel[0]; x <= sel[2]; x++) out.push(ref(x, y)); return out.slice(0, 20000); };
+  function style(prop, val, toggle) {
+    const cells = cellsOf(), cur = (jx.getStyle(cells[0]) || "").replace(/\s/g, ""), on = toggle && cur.includes(`${prop}:${val}`);
+    const o = {}; for (const c of cells) o[c] = `${prop}: ${on ? (prop === "background-color" ? "transparent" : "normal") : val}`;
+    jx.setStyle(o); touch();
+  }
+  document.querySelectorAll("[data-st]").forEach(b => b.onclick = () => { const [p, v] = b.dataset.st.split(":"); style(p, v, p !== "text-align"); });
+  $("#fill").onclick = e => menu($("#fill"), [["Yellow", "#FFF2A8"], ["Green", "#CDEFD3"], ["Blue", "#CFE4FA"], ["Red", "#F9D2D2"], ["Gray", "#E3E6E8"]].map(([n, c]) => ({ label: n, run: () => { const o = {}; for (const k of cellsOf()) { o[k] = `background-color: ${c}`; } jx.setStyle(o); const t = {}; for (const k of cellsOf()) t[k] = "color: #10181C"; jx.setStyle(t); touch(); } }))
+    .concat(["-", { label: "No highlight", run: () => { const o = {}, t = {}; for (const k of cellsOf()) { o[k] = "background-color: transparent"; t[k] = "color: inherit"; } jx.setStyle(o); jx.setStyle(t); touch(); } }]));
+  $("#rows").onclick = () => menu($("#rows"), [
+    { label: "Insert row above", run: () => jx.insertRow(1, sel[1], true) }, { label: "Insert row below", run: () => jx.insertRow(1, sel[3], false) },
+    { label: "Insert column left", run: () => jx.insertColumn(1, sel[0], true) }, { label: "Insert column right", run: () => jx.insertColumn(1, sel[2], false) }, "-",
+    { label: sel[3] > sel[1] ? `Delete rows ${sel[1] + 1} to ${sel[3] + 1}` : `Delete row ${sel[1] + 1}`, run: () => jx.deleteRow(sel[1], sel[3] - sel[1] + 1) },
+    { label: sel[2] > sel[0] ? `Delete columns ${colName(sel[0])} to ${colName(sel[2])}` : `Delete column ${colName(sel[0])}`, run: () => jx.deleteColumn(sel[0], sel[2] - sel[0] + 1) }]);
+  $("#sort").onclick = () => menu($("#sort"), [{ label: `Sort by column ${colName(sel[0])}, A to Z`, run: () => jx.orderBy(sel[0], 0) }, { label: `Sort by column ${colName(sel[0])}, Z to A`, run: () => jx.orderBy(sel[0], 1) }]);
+  const fx = $("#formula");
+  fx.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); jx.setValueFromCoords(sel[0], sel[1], fx.value); fx.blur(); jx.updateSelectionFromCoords(sel[0], sel[1] + 1, sel[0], sel[1] + 1); }
+    else if (e.key === "Escape") { fx.value = raw(sel[0], sel[1]); fx.blur(); }
+  };
+  addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && !e.altKey && document.activeElement !== fx) { const k = e.key.toLowerCase(); if (k === "b") { e.preventDefault(); style("font-weight", "bold", true); } else if (k === "i") { e.preventDefault(); style("font-style", "italic", true); } } });
+
+  // ----- files: Excel workbooks through SheetJS; CSV as text
+  function fromBook(wb) {
+    const out = []; let cut = false;
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name], rg = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      const R = Math.min(rg.e.r, MAXR - 1), C = Math.min(rg.e.c, MAXC - 1); cut = cut || rg.e.r > R || rg.e.c > C;
+      const data = [];
+      for (let y = 0; y <= R; y++) { const row = []; for (let x = 0; x <= C; x++) { const c = ws[XLSX.utils.encode_cell({ r: y, c: x })];
+        row.push(!c ? "" : c.f ? "=" + c.f : c.t === "n" && c.w != null && /[/:]|[a-z]{3}/i.test(c.w) && !/e[+-]/i.test(c.w) ? c.w : c.t === "b" ? (c.v ? "TRUE" : "FALSE") : c.v == null ? "" : String(c.v)); } data.push(row); }
+      out.push({ name, data: trim(data.length ? data : [[""]]), widths: (ws["!cols"] || []).map(c => c && (c.wpx || (c.wch && Math.round(c.wch * 7 + 5))) ? Math.max(40, Math.min(500, Math.round(c.wpx || c.wch * 7 + 5))) : 100), style: {} });
+    }
+    if (cut) toast(`Only the first ${MAXR.toLocaleString("en-US")} rows and ${MAXC} columns of each sheet are shown.`, 5000);
+    return out.length ? out : [blankSheet("Sheet1")];
+  }
+  const num = v => typeof v === "string" && v.trim() !== "" && /^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v.trim());
+  function toBook() {
+    keep();
+    const wb = XLSX.utils.book_new();
+    sheets.forEach((s, i) => {
+      const ws = {}, [r, c] = used(s.data);
+      for (let y = 0; y < r; y++) for (let x = 0; x < c; x++) {
+        const v = s.data[y][x]; if (v === "" || v == null) continue;
+        const a = XLSX.utils.encode_cell({ r: y, c: x });
+        if (String(v).startsWith("=") && String(v).length > 1) { const res = i === at && jx ? shownVal(x, y) : undefined; ws[a] = { t: num(String(res ?? "")) ? "n" : "s", f: String(v).slice(1), ...(res !== undefined && res !== "" ? { v: num(String(res)) ? Number(res) : String(res) } : {}) }; if (ws[a].v === undefined) ws[a].t = "n"; }
+        else if (num(v)) ws[a] = { t: "n", v: Number(v) };
+        else if (v === "TRUE" || v === "FALSE") ws[a] = { t: "b", v: v === "TRUE" };
+        else ws[a] = { t: "s", v: String(v) };
+      }
+      ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, r - 1), c: Math.max(0, c - 1) } });
+      ws["!cols"] = s.widths.slice(0, Math.max(1, c)).map(w => ({ wpx: w || 100 }));
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    });
+    return wb;
+  }
+  function csv() {  // the sheet in front, as it shows (results, not formulas)
+    keep(); const [r, c] = used(sheets[at].data), q = v => /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    const rows = []; for (let y = 0; y < r; y++) { const row = []; for (let x = 0; x < c; x++) row.push(q(String(shownVal(x, y)))); rows.push(row.join(",")); }
+    return rows.join("\n") + "\n";
+  }
+  function setAll(list) { sheets = list; at = 0; sel = [0, 0, 0, 0]; jx = null; draw(); }
+
+  Desk.start({
+    types: [["Excel workbook", "xlsx"], ["CSV, this sheet only", "csv"]],
+    canSave: ext => ext === ".xlsx" || ext === ".csv",
+    blank() { setAll([blankSheet("Sheet1")]); },
+    load(r) {
+      if (r.b64 != null) setAll(fromBook(XLSX.read(r.b64, { type: "base64", cellFormula: true, cellNF: true })));
+      else { const wb = XLSX.read(r.text || "", { type: "string", raw: true, FS: /\.tsv$/i.test(r.name) ? "\t" : undefined }); const l = fromBook(wb); l[0].name = (r.name || "Sheet1").replace(/\.[^.]+$/, "").slice(0, 31) || "Sheet1"; setAll(l); }
+    },
+    dump(ext) { return ext === ".csv" ? { text: csv() } : { b64: XLSX.write(toBook(), { type: "base64", bookType: "xlsx" }) }; },
+    draft() { keep(); const cells = sheets.reduce((n, s) => n + s.data.length * (s.data[0]?.length || 0), 0), d = Desk.doc;
+      return { doc: { path: d.path, name: d.name, dirty: d.dirty, mtime: d.mtime }, paths: d.path ? [d.path] : [], at, sheets: cells <= 400000 ? sheets : null }; },
+    async restore(d) {
+      if (d.sheets?.length) { sheets = d.sheets; at = Math.min(d.at || 0, sheets.length - 1); draw(); if (d.doc) Desk.use({ ...Desk.blankDoc(), ...d.doc }); return; }
+      draw();
+      if (d.doc?.path) { const r = await Desk.call("read", { path: d.doc.path }); if (r && !r.error) await Desk.load(r); }  // too large to keep as a draft: back from the file
+    },
+    forChat() { const d = Desk.doc; return `In Ledger on the Desk, ${d.name || "an untitled workbook"}${d.path ? ` (${d.path})` : ""}, sheet ${sheets[at].name}, cells ${$("#cell").value}: `; },
+    state() { keep(); return { sheets: sheets.map((s, i) => { const [r, c] = used(s.data); return { name: s.name, rows: r, columns: c, in_front: i === at }; }), selection: $("#cell").value }; },
+    read(a) {
+      keep();
+      const i = a.sheet ? sheets.findIndex(s => s.name.toLowerCase() === String(a.sheet).toLowerCase()) : at;
+      if (i < 0) return { error: `No sheet called ${a.sheet}. Sheets: ${sheets.map(s => s.name).join(", ")}.` };
+      const s = sheets[i], [ur, uc] = used(s.data);
+      let rg = a.range ? parseRange(a.range) : [0, 0, Math.max(0, uc - 1), Math.max(0, ur - 1)];
+      if (!rg) return { error: "Give the range like A1:D20." };
+      const full = rg[3] - rg[1] + 1; rg[3] = Math.min(rg[3], rg[1] + 299); rg[2] = Math.min(rg[2], rg[0] + 59);
+      const cells = [], values = []; let formulas = false;
+      for (let y = rg[1]; y <= rg[3]; y++) { const row = [], vr = []; for (let x = rg[0]; x <= rg[2]; x++) { const v = s.data[y]?.[x] ?? ""; row.push(v); if (String(v).startsWith("=")) formulas = true; vr.push(i === at && jx ? shownVal(x, y) : v); } cells.push(row); values.push(vr); }
+      return { sheet: s.name, used_range: ur ? `A1:${ref(uc - 1, ur - 1)}` : "empty", range: `${ref(rg[0], rg[1])}:${ref(rg[2], rg[3])}`, cells, ...(formulas && i === at ? { results: values } : {}),
+        ...(full > 300 ? { note: `Showing 300 of ${full} rows; ask for the next range.` } : {}) };
+    },
+    write(a) {
+      if (a.add_sheet) { keep(); sheets.push(blankSheet(unique(String(a.add_sheet).slice(0, 31)))); at = sheets.length - 1; sel = [0, 0, 0, 0]; draw(); }
+      if (a.sheet) { const i = sheets.findIndex(s => s.name.toLowerCase() === String(a.sheet).toLowerCase()); if (i < 0) return { error: `No sheet called ${a.sheet}. Sheets: ${sheets.map(s => s.name).join(", ")}. Use add_sheet to make one.` }; if (i !== at) goSheet(i); }
+      if (a.rename_sheet) { sheets[at].name = unique(String(a.rename_sheet).replace(/[\\/?*[\]:]/g, " ").slice(0, 31)); drawSheets(); }
+      const sets = [];  // [x, y, value]
+      if (a.rows) { const o = parseRef(a.at || "A1"); if (!o) return { error: "Give `at` like A1." }; a.rows.forEach((row, dy) => (Array.isArray(row) ? row : [row]).forEach((v, dx) => sets.push([o[0] + dx, o[1] + dy, v]))); }
+      for (const [k, v] of Object.entries(a.cells || {})) { const p = parseRef(k); if (!p) return { error: `${k} isn't a cell like B2.` }; sets.push([p[0], p[1], v]); }
+      if (a.clear) { const rg = parseRange(a.clear); if (!rg) return { error: "Give `clear` like A1:C5." }; for (let y = rg[1]; y <= rg[3]; y++) for (let x = rg[0]; x <= rg[2]; x++) sets.push([x, y, ""]); }
+      if (sets.length) {
+        const mx = Math.max(...sets.map(s => s[0])), my = Math.max(...sets.map(s => s[1]));
+        if (mx >= MAXC || my >= MAXR) return { error: `Ledger holds up to ${MAXR} rows and ${MAXC} columns.` };
+        const d = jx.getData(), rows = d.length, cols = d[0].length;
+        if (my >= rows || mx >= cols) {  // grow the grid first
+          keep(); const s = sheets[at]; while (s.data.length <= my) s.data.push([]); s.data = s.data.map(r => { const n = r.slice(); while (n.length <= mx) n.push(""); return n; });
+          for (const [x, y, v] of sets) s.data[y][x] = v == null ? "" : String(v);
+          draw();
+        } else for (const [x, y, v] of sets) jx.setValueFromCoords(x, y, v == null ? "" : String(v), true);
+        const [x, y] = sets[0]; try { jx.updateSelectionFromCoords(x, y, x, y); } catch (e) {}
+      }
+      if (a.bold) { const rg = parseRange(a.bold); if (rg) { const o = {}; for (let y = rg[1]; y <= rg[3]; y++) for (let x = rg[0]; x <= rg[2]; x++) o[ref(x, y)] = "font-weight: bold"; jx.setStyle(o); } }
+      if (a.widths) for (const [k, w] of Object.entries(a.widths)) { const x = colIdx(k); if (x >= 0 && +w > 20) jx.setWidth(x, Math.min(600, +w)); }
+      if (!sets.length && !a.add_sheet && !a.sheet && !a.rename_sheet && !a.bold && !a.widths) return { error: "Pass cells ({\"B2\": \"=SUM(A1:A9)\"}), rows with at, clear, add_sheet, rename_sheet, bold or widths." };
+      foot(); onSel();
+      return { ok: true, sheet: sheets[at].name, cells_set: sets.length };
+    },
+    onTheme() {},
+  });
+})();
+</script>

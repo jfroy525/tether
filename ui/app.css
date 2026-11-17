@@ -1511,3 +1511,19 @@ body.pin-dragging .sess .acts { display: none !important; }
 .pk-kinds input { accent-color: var(--accent-fill); margin: 0; }
 
 .modal-box .rl-list:not(:empty) { display: flex; flex-direction: column; gap: 1px; margin: -4px -6px 14px; }
+
+/* ---------- the Desk tab: Tether's own editors (desk.js, ui/desk/) ---------- */
+#panel-body[hidden], #desk-body[hidden] { display: none !important; }
+#desk-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.desk-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex: none; }
+.desk-apps button { display: inline-flex; align-items: center; gap: 6px; }
+.desk-apps .dd { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); transform: scale(0); margin-left: -2px; transition: transform .25s var(--spring); }
+.desk-apps .dd.on { transform: scale(1); margin-left: 0; }
+.desk-stage { flex: 1; min-height: 0; position: relative; margin: 0 8px 8px; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+.desk-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; animation: fade-in .2s ease-out; }
+.desk-frame[hidden] { display: none; }
+body.desk-full #side, body.desk-full #main { display: none; }
+body.desk-full #app { grid-template-columns: minmax(0, 1fr); }
+body.desk-full #panel { width: auto !important; margin: 8px; }
+body.desk-full #panel-grip { display: none; }
+body.desk-full .panel-head { padding-left: 86px; }

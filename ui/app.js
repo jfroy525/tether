@@ -1166,9 +1166,9 @@ function viewMenu(anchor, rows) {
 // the side panel's width: one per tab, from dragging its left edge; View starts wider, since pages need room
 function applyPanelW() {
   const p = $("#panel");
-  if (document.body.classList.contains("view-full") && state.tab === "view") { p.style.width = ""; return; }
+  if ((document.body.classList.contains("view-full") && state.tab === "view") || (document.body.classList.contains("desk-full") && state.tab === "desk")) { p.style.width = ""; return; }
   const max = Math.max(320, innerWidth - ($("#side").offsetWidth || 0) - 420);
-  p.style.width = Math.max(320, Math.min(max, +(state.settings.panel_w || {})[state.tab] || (state.tab === "view" ? 600 : 380))) + "px";
+  p.style.width = Math.max(320, Math.min(max, +(state.settings.panel_w || {})[state.tab] || (state.tab === "view" ? 600 : state.tab === "desk" ? 760 : 380))) + "px";
 }
 function wirePanelGrip() {
   const g = $("#panel-grip");
@@ -1653,6 +1653,7 @@ function onEvent(ev) {
   switch (ev.type) {
     case "session_state": if (S) setStatus(S, ev); break;
     case "models": state.models = ev.models || []; fillModels(); break;
+    case "desk_req": DeskHost.request(ev); break;  // Claude's desk tool
     case "other_models": state.other = ev; fillModels(); { const l = $("#om-line"); if (l) l.textContent = omLine(); } break;
     case "model_refused": if (S) S.refused = true, add(S, errRow(S, `${ev.host || "The gateway"} refused ${ev.name || ev.model} (${ev.status}), so Tether stopped instead of retrying for minutes and took it out of the model menu. Pick another model.`)); break;
     case "notes":
@@ -2633,6 +2634,10 @@ const TOOL_ICONS = {
   window: '<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18"/><path d="M13 16l5-5 2 2-5 5h-2z"/>',
   text: '<path d="M4 7V5h16v2M12 5v14M9 19h6"/>',
   lift: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  slate: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+  ledger: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 14.5h18M9 4v16M15 4v16"/>',
+  folio: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  tack: '<path d="M5 4h14v11l-5 5H5z"/><path d="M19 15h-5v5"/>',
   clear: '<path d="M7 21h10M5 15l8-8 5 5-6 6H8z"/>',
   color: '<path d="m14.5 6.5 3 3"/><path d="M16 4.5a2.1 2.1 0 0 1 3 3l-2 2-3-3z"/><path d="M14 7.5 6 15.5 5 19l3.5-1 8-8"/>',
 };
@@ -2642,6 +2647,11 @@ const TOOLS = [  // group: "Show Claude" points Claude at something; "Bring in" 
   { k: "text", name: "Copy text from the screen", short: "Copy text", desc: "Drag a box, its text goes in the message", group: "Bring in", run: () => api().start_circle("text") },
   { k: "color", name: "Pick a color from the screen", short: "Color", desc: "Click any spot, its hex code goes in the message", group: "Bring in", run: () => api().pick_color() },
   { k: "lift", name: "Lift a table onto the Shelf", short: "Lift table", desc: "Drag over a table, sort and filter it", group: "Bring in", run: () => api().start_circle("lift") },
+  // the Desk (desk.js): Tether's own editors, in the side panel; Claude works in them with its desk tool
+  { k: "slate", name: "Slate", short: "Slate", desc: "Text and code editor, with tabs", group: "Desk", run: () => DeskHost.open("slate") },
+  { k: "ledger", name: "Ledger", short: "Ledger", desc: "Spreadsheets: opens and saves Excel files", group: "Desk", run: () => DeskHost.open("ledger") },
+  { k: "folio", name: "Folio", short: "Folio", desc: "Documents: opens and saves Word files", group: "Desk", run: () => DeskHost.open("folio") },
+  { k: "tack", name: "Tack", short: "Tack", desc: "Sticky notes you and Claude both write", group: "Desk", run: () => DeskHost.open("tack") },
 ];
 const toolIcon = k => `<svg viewBox="0 0 24 24">${TOOL_ICONS[k] || ""}</svg>`;
 const toolKey = t => (t.key && state.hotkeys?.[state.settings?.[t.key]]) || "";
@@ -3230,7 +3240,7 @@ function renameThread(S, node) {
 function togglePanel(on, tab) {
   state.panel = on ?? !state.panel;
   if (tab) setTab(tab);
-  if (!state.panel) document.body.classList.remove("view-full");
+  if (!state.panel) document.body.classList.remove("view-full", "desk-full");
   $("#panel").hidden = !state.panel;
   applyPanelW();
   $("#panel-btn").classList.toggle("on", state.panel);
@@ -3242,6 +3252,7 @@ function setTab(tab) {
   state.tab = tab;
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab));
   if (tab !== "view") document.body.classList.remove("view-full");
+  if (tab !== "desk") document.body.classList.remove("desk-full");
   applyPanelW();
 }
 function renderPR() {
@@ -3264,6 +3275,9 @@ function syncPanelTabs() {
 async function renderPanel(fresh) {
   const body = $("#panel-body"), S = state.open.get(state.active), st = state.repo.status;
   syncPanelTabs();
+  const desk = state.tab === "desk";  // the Desk keeps its own pages alive beside the panel's body (desk.js)
+  body.hidden = desk; $("#desk-body").hidden = !desk;
+  if (desk) { $("#pr-card").hidden = true; $("#panel-refresh").hidden = true; DeskHost.show(); return; }
   $("#pr-card").hidden = true;  // the Changes tab shows PRs itself; the top bar keeps the one-line PR status
   body.classList.remove("view-body");
   $("#panel-refresh").hidden = state.tab === "view";  // View has its own reload

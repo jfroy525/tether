@@ -5,6 +5,12 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · The Desk: Slate, Ledger, Folio and Tack
+- A new Desk tab in the side panel, also in the toolbox, with four small editors. Slate is for text and code, Ledger for spreadsheets, Folio for documents, Tack for sticky notes.
+- Ledger opens and saves Excel files (.xlsx) and exports CSV. Folio opens and saves Word files (.docx) and exports a web page, Markdown or plain text.
+- Ask Claude in each editor puts the file and your selection in your message. Claude can read and change what's open there, and you watch it happen. Chats started before this update need a fresh start to get the tool.
+- Unsaved work is kept across a restart of Tether, and a file that changes on disk reloads.
+
 ## 2026-11-17 · Newest models first
 - In the model menu, each company's models are listed with the highest version first, and the larger model first when versions match.
 

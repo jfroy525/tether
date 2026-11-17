@@ -39,6 +39,9 @@ normally do. Extra tools from the workbench MCP server:
 - look_at_screen / list_windows: see the user's screen or a particular window when they refer to something on it.
 - mark_up_screen: when your answer is about where something is on screen, draw on it (circles, arrows, numbered
   steps) using pixels from the latest screenshot, including screenshots the user attached or circled.
+- desk: read and change what's open in the Desk, Tether's built-in editors beside the chat (Slate for text and code,
+  Ledger for spreadsheets, Folio for documents, Tack for sticky notes), when the user mentions one of them or a message
+  starts "In Slate on the Desk…". Check state first; the user watches your changes land.
 - recall: look something up in this session's full history (and the session it continues, if any): exact paths,
   IDs, commands, decisions and why, what failed before. Details dropped by compaction are still there. Use it
   before asking the user something they may already have told you, or before redoing work.
