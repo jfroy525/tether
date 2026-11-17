@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Split menu fits, and any layout with two chats
+- The Split menu grows to fit its longest row, so its wording stays inside the box at larger text sizes.
+- You can pick a three or four pane layout with fewer chats open. The spare panes show "Pick a chat for this pane" with your recent chats and New chat.
+
 ## 2026-11-17 · Restart box names the chat
 - The box that shows while a restart waits now says which chat it is waiting for and why, in the same plain sentence as the sidebar, for example "Tether will restart when Data Forge finishes replying, then reopen your chats." Several chats are listed with their reasons.
 - Its button reads Cancel restart, to match the sidebar.

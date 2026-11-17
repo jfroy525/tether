@@ -1397,7 +1397,7 @@ body.split-drag iframe, body.split-drag-h iframe { pointer-events: none; }
 .split-ghost { position: fixed; left: 0; top: 0; z-index: 99; max-width: 240px; height: 28px; padding: 0 10px; display: flex; align-items: center; border: 1px solid var(--pane-line); border-radius: 8px;
   background: var(--pop-bg); box-shadow: var(--shadow-pop); color: var(--text); font: var(--fs-ctl) var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; -webkit-user-select: none !important; user-select: none !important; }
-.popup.menu.split-menu { width: 300px; z-index: 60; max-height: none; overflow: visible; }
+.popup.menu.split-menu { width: max-content; min-width: 240px; max-width: calc(100vw - 24px); z-index: 60; max-height: none; overflow: visible; }  /* as wide as its longest row, at any text size */
 .popup.menu.split-menu .it, .popup.menu.split-pick .it { align-items: center; }
 .popup.menu.split-menu .it .lp { width: 22px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--text-2); }
 .popup.menu.split-menu .it .b, .popup.menu.split-pick .it .b { margin-left: auto; flex: none; }

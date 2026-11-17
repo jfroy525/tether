@@ -313,9 +313,7 @@ const Extras = (() => {
   }
   const tooNarrow = () => ($("#chats")?.clientWidth || 0) < THREE_MIN;
   function layoutBlock(k) {  // why a layout can't be picked right now, in a few words; "" when it can
-    const need = LAYOUTS[k].n - state.open.size;
-    if (need > 0) return `open ${need} more chat${need > 1 ? "s" : ""}`;
-    return k === "3" && tooNarrow() ? "window too narrow" : "";
+    return k === "3" && tooNarrow() ? "window too narrow" : "";  // fewer open chats than panes is fine: the spare panes ask for a chat
   }
 
   const split = {
