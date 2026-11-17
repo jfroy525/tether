@@ -65,7 +65,10 @@ const DeskHost = (() => {
   }
   function mark(app) {  // the dot beside an editor's name: it holds unsaved changes
     const b = box().querySelector(`[data-app="${app}"] .dd`);
-    if (b) b.classList.toggle("on", !!frames[app]?.title.dirty);
+    if (!b) return;
+    const dirty = !!frames[app]?.title.dirty, a = APPS.find(x => x[0] === app);
+    b.classList.toggle("on", dirty);
+    b.parentNode.title = dirty ? `${a[1]} has unsaved changes` : a[2];  // say what the dot means
   }
   async function handle(fr, app, d) {
     const a = d.args || {};

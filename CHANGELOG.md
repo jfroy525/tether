@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Desk dots explained
+- Hovering an editor's name on the Desk says when it has unsaved changes, which is what the dot beside the name means.
+
 ## 2026-11-17 · Desk: move pictures, manage files, reorder tabs
 - Folio: click a picture to select it, drag it anywhere on the page, drag a corner to resize it, or nudge it with the arrow keys. ⌘Z takes the move back, and Word files keep the position.
 - Slate, Ledger and Folio: the folder button beside the file name (⇧⌘O) opens Files, with recent files and the folders you've picked files in. Open, rename, copy, move, show in Finder or move a file to the Trash from there.
