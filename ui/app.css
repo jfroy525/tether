@@ -1384,8 +1384,8 @@ body.dark .sq-pop { box-shadow: 0 -12px 30px -14px rgba(0, 0, 0, .6); }
 .split-grip:hover::after, .split-grip.drag::after { background: var(--accent-line); }
 body.split-drag .split-grip:not(.drag):not(.c)::after, body.split-drag-h .split-grip:not(.drag):not(.c)::after, body.split-drag-c .split-grip:not(.c)::after { background: transparent; }
 .split-grip.c { top: auto; bottom: auto; width: 20px; height: 20px; cursor: move; z-index: 6; }  /* the meeting point: moves both lines */
-.split-grip.c::after { left: 5px; top: 5px; bottom: auto; width: 10px; height: 10px; margin: 0; border-radius: 50%; background: var(--text-3); transition: transform .15s, background .15s; }
-.split-grip.c:hover::after { background: var(--text-2); }
+.split-grip.c::after { left: 5px; top: 5px; bottom: auto; width: 10px; height: 10px; margin: 0; border-radius: 50%; background: var(--accent-fill); transition: transform .15s, background .15s; }  /* your accent color (Settings › Appearance) */
+.split-grip.c:hover::after { background: var(--accent-hover); }
 .split-grip.c:hover::after { transform: scale(1.3); }
 body.split-drag, body.split-drag-h, body.split-drag-c { -webkit-user-select: none; user-select: none; } body.split-drag-c { cursor: move; } body.split-drag-c iframe { pointer-events: none; } body.split-drag { cursor: col-resize; } body.split-drag-h { cursor: row-resize; }
 body.split-drag iframe, body.split-drag-h iframe { pointer-events: none; }

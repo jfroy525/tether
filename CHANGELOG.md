@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Split dot in your accent color
+- The dot where the pane lines meet uses the accent color from Settings › Appearance.
+
 ## 2026-11-17 · Quieter lines in split view
 - The short handle marks on the lines between panes are gone. A line lights up along its length when you hover or drag it.
 
