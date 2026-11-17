@@ -214,7 +214,14 @@ class OtherModels:
                 c = m["context"]
                 bits.append((f"{c / 1e6:.2f}".rstrip("0").rstrip(".") + "M" if c >= 1e6 else f"{round(c / 1000)}k") + " context")
             out.append({"value": mid, "displayName": name(mid), "group": maker(mid), "description": " · ".join(bits), "older": mid in old})
-        out.sort(key=lambda x: (x["group"].lower(), x["displayName"].lower()))
+        def order(x):  # within a company: highest version first, then the dearer (larger) model, then by name
+            _, ver, date = _kind(x["value"])
+            try:
+                usd = float((self.data["models"][x["value"]].get("price") or {}).get("prompt") or 0)
+            except (TypeError, ValueError):
+                usd = 0.0
+            return (x["group"].lower(), ver is None, tuple(-n for n in (((ver or ()) + (0,) * 4)[:4])), -usd, bool(date), x["displayName"].lower())
+        out.sort(key=order)
         n_checked = sum(1 for m in self.data["models"].values() if m.get("checked"))
         return {"on": True, "host": host(), "models": out, "checked_at": self.data.get("checked_at"),
                 "listed_at": self.data.get("listed_at"), "tried": n_checked, "busy": self.busy}

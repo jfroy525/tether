@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Newest models first
+- In the model menu, each company's models are listed with the highest version first, and the larger model first when versions match.
+
 ## 2026-11-17 · Newest models only
 - Settings › Sessions › Newest models only (off to start) shortens the model menu for other companies to the newest version of each kind of model: GPT 5.4 Mini hides GPT 5 Mini, and dated copies of a model go.
 - "Show all" under a company brings the rest back. The model a chat is using, and models you added yourself, always show.
