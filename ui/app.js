@@ -3219,15 +3219,15 @@ const GLASS = {
   light: { page: [247, 250, 251], side: [255, 255, 255], comp: [255, 255, 255], solid: ["#EDF2F4", "#F8FAFB", "#FFFFFF"], side_k: .75 },
 };
 function applyGlass(t, dark = document.body.classList.contains("dark"), frost = state.settings?.frost) {
-  t = Math.max(0, Math.min(100, Number(t ?? 55)));
+  t = Math.max(0, Math.min(100, Number(t ?? 71)));
   const G = GLASS[dark ? "dark" : "light"], b = document.body.style, rgba = (c, a) => `rgba(${c.join(", ")}, ${a.toFixed(3)})`;
-  const a = t <= 55 ? 1 - .72 * t / 100 : .604 - .544 * (t - 55) / 45;  // the window's tint: 55 (default) ≈ .60, 100 = .06
+  const a = t <= 55 ? 1 - .72 * t / 100 : .604 - .544 * (t - 55) / 45;  // the window's tint: 55 ≈ .60, 71 (default) ≈ .41, 100 = .06
   b.setProperty("--page", t ? rgba(G.page, a) : G.solid[0]);
   b.setProperty("--side-bg", t ? rgba(G.side, a * G.side_k) : G.solid[1]);
   b.setProperty("--composer-bg", t ? rgba(G.comp, Math.max(t > 55 ? .72 - .3 * (t - 55) / 45 : .72, a)) : G.solid[2]);
   document.body.classList.toggle("glass-clear", t >= 70);
   document.body.classList.toggle("glass-solid", !t);
-  frost = Math.max(0, Math.min(100, Number(frost ?? 50)));
+  frost = Math.max(0, Math.min(100, Number(frost ?? 48)));
   window.pywebview?.api?.set_look?.(dark, t, frost);  // frost: the blur itself
   state.glass = { t, a: t ? a : 1, dark, frost, side: a * G.side_k, comp: Math.max(t > 55 ? .72 - .3 * (t - 55) / 45 : .72, a) };
   adaptGlass();
@@ -3724,8 +3724,8 @@ async function settingsDialog() {
       + row("Start new sessions in", `<select data-k="perm_mode">${opts([["", "Claude Code default"], ...[...$("#mode-sel").options].map(o => [o.value, o.text])], s.perm_mode)}</select>`,
       "Also applies when you open a past session. The mode menu by the message box changes only the session you're in"))}
     ${sec("Appearance", row("Theme", `<select data-k="theme">${opts([["system", "Match system"], ["dark", "Dark"], ["light", "Light"]], s.theme)}</select>`)
-      + row("Transparency", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="transparency" value="${esc(s.transparency ?? 55)}"><span class="mono">${esc(s.transparency ?? 55)}%</span></span>`, "How much of your desktop shows through the window. 0 is a solid window")
-      + row("Frost", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="frost" value="${esc(s.frost ?? 50)}"><span class="mono">${esc(s.frost ?? 50)}%</span></span>`, "How strongly the desktop behind the window is blurred. 0 is sharp, 50 is the macOS default")
+      + row("Transparency", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="transparency" value="${esc(s.transparency ?? 71)}"><span class="mono">${esc(s.transparency ?? 71)}%</span></span>`, "How much of your desktop shows through the window. 0 is a solid window")
+      + row("Frost", `<span class="range-pick"><input type="range" min="0" max="100" step="1" data-k="frost" value="${esc(s.frost ?? 48)}"><span class="mono">${esc(s.frost ?? 48)}%</span></span>`, "How strongly the desktop behind the window is blurred. 0 is sharp, 50 is the macOS default")
       + row("Adjust to what's behind", sw("glass_adapt", s.glass_adapt !== false), "Each part of the window checks what's behind it about once a second, and switches to dark or light text, or adds a little tint, so text stays readable")
       + (mac.screen === false && s.glass_adapt !== false ? macOff("Needs Screen Recording", "screen") : "")
       + row("Accent color", `<span class="accent-pick"><input type="color" data-accent value="${esc(s.accent || "#0B6E86")}"><input type="text" class="mono" data-k="accent" value="${esc(s.accent || "")}" placeholder="Default" spellcheck="false"><button class="btn ghost small" data-accent-reset ${s.accent ? "" : "hidden"}>Default</button></span>`, "Any color. Tether shades it for light and dark so text and buttons stay readable")

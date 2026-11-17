@@ -71,8 +71,8 @@ DEFAULTS = {
     "select_anim": "glow",    # selected text: "glow" (flashes as you let go), "liquid" (glides after the pointer), "marker" (paints each line) or "off"
     "reply_anim": "blur",     # how a reply lands: "blur" (words come into focus), "scan" (a bar sweeps each line) or "off"
     "view": "full",           # full = everything; thinking = thinking + replies, no tool calls; chat = just messages and replies
-    "transparency": 55,       # 0–100: how much of the desktop shows through the window; 0 = solid, no blur
-    "frost": 50,              # 0–100: how strongly the desktop behind is blurred, apart from transparency; 50 = macOS's own
+    "transparency": 71,       # 0–100: how much of the desktop shows through the window; 0 = solid, no blur
+    "frost": 48,              # 0–100: how strongly the desktop behind is blurred, apart from transparency; 50 = macOS's own
     "glass_adapt": True,
     "auto_update": False,     # update or restart on its own once nothing is working (Settings › Updates)
     "dock_pulse": True,       # the Dock icon glows softly while any chat is working      # each pane switches light/dark text, or adds tint, by what's behind it, so text stays readable
@@ -2016,7 +2016,7 @@ class Api:
 
     # ----- the window -----
 
-    def set_look(self, dark, transparency=55, frost=50):
+    def set_look(self, dark, transparency=71, frost=48):
         """The desktop blur follows the page's theme (not only the system's); transparency 0 turns it off.
         Transparency fades the material's own tint past 55; frost sets the blur radius (0–60, 30 is macOS's own).
         AppKit rebuilds these layers on theme changes and sometimes on focus, so they're set again each time."""
@@ -2025,7 +2025,7 @@ class Api:
             Path(os.environ.get("TETHER_LOOK") or SUPPORT / "look.json").write_text(json.dumps({"dark": bool(dark)}))
         except OSError:
             pass
-        t, f = float(transparency or 0), float(50 if frost is None else frost)
+        t, f = float(transparency or 0), float(48 if frost is None else frost)
         tint = 1.0 if t <= 55 else max(0.1, 1 - 0.9 * (t - 55) / 45)
 
         def layers():
