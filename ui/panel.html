@@ -32,7 +32,10 @@ body { font: var(--fs)/1.45 var(--font); color: var(--text); -webkit-user-select
 @keyframes wp-in { from { opacity: 0; transform: translateY(-8px) scale(.97); } }
 @media (prefers-reduced-motion: reduce) { .in > *, .leave { animation: none !important; } }
 .wp-hd { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 9px 6px 7px 8px; margin: 0 -4px; padding-left: 12px; padding-right: 10px;
-  background: var(--pop-bg); border-radius: 14px 14px 0 0; cursor: grab; }
+  background: var(--pop-bg); border-radius: 14px 14px 0 0; cursor: pointer; }
+.wp-hd .go { display: inline-flex; opacity: .45; transition: opacity .15s; } .wp-hd:hover .go { opacity: 1; }
+.wp-hd .go svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.wp-ih { cursor: pointer; }
 .wp-hd img, .wp-fold img { width: 18px; height: 18px; border-radius: 5px; flex: none; }
 .wp-hd .t { font-weight: 600; }
 .wp-hd .n { color: var(--text-3); font-size: var(--fs-meta); }
@@ -83,7 +86,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 <script>
 const post = m => { try { window.webkit.messageHandlers.tether.postMessage(JSON.stringify(m)); } catch (e) { (window.sent ||= []).push(m); } };
 const IC = {
-  fold: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>', down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  fold: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>', down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   open: '<svg viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M10 7H6a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-4"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>', send: '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
   yes: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', no: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',
@@ -129,8 +132,8 @@ function draw() {
     const first = st.items.find(x => !sent.has(x.id)) || st.items[0] || {};
     root.innerHTML = `<div class="wp-fold" data-unfold><img src="../assets/icon.png" alt=""><span class="dot"></span><span>${n || st.items.length} waiting</span><span class="nm">${esc(first.title || "")}</span>${IC.down}</div>`;
   } else {
-    root.innerHTML = `<div class="wp" style="max-height:${Math.max(160, (st.max_h || 700) - 32)}px"><div class="wp-hd"><img src="../assets/icon.png" alt=""><span class="t">Waiting on you</span><span class="n">${n || ""}</span><span class="sp"></span>
-      <button class="icb" title="Fold" data-act="fold">${IC.fold}</button><button class="icb" title="Close" data-act="close">${IC.close}</button></div>${items.map(x => x.gone ? `<div class="wp-i">${sentHtml(sent.get(x.id))}</div>` : rowHtml(x)).join("")}</div>`;
+    root.innerHTML = `<div class="wp" style="max-height:${Math.max(160, (st.max_h || 700) - 32)}px"><div class="wp-hd" title="Open Tether"><img src="../assets/icon.png" alt=""><span class="t">Waiting on you</span><span class="n">${n || ""}</span><span class="go">${IC.open}</span><span class="sp"></span>
+      <button class="icb" title="Fold to a small bar" data-act="fold">${IC.fold}</button><button class="icb" title="Close" data-act="close">${IC.close}</button></div>${items.map(x => x.gone ? `<div class="wp-i">${sentHtml(sent.get(x.id))}</div>` : rowHtml(x)).join("")}</div>`;
     root.querySelectorAll("[data-reply]").forEach(i => { const id = i.closest(".wp-i").dataset.id; i.value = typed[id] || ""; i.oninput = () => { typed[id] = i.value; }; i.onkeydown = e => { if (e.key === "Enter" && i.value.trim()) act(i.closest(".wp-i"), "reply"); if (e.key === "Escape") i.blur(); }; });
   }
   if (typingIn) {
@@ -164,7 +167,12 @@ function act(row, a, i) {
 root.addEventListener("click", e => {
   if (moved) { moved = false; return; }
   if (e.target.closest("[data-unfold]")) { fold = false; draw(); return; }
-  const t = e.target.closest("[data-act]"); if (!t) return;
+  const t = e.target.closest("[data-act]");
+  if (!t) {  // the top line opens Tether at the first chat that's waiting; a chat's own name line opens that chat
+    const row = e.target.closest(".wp-ih") ? e.target.closest(".wp-i") : e.target.closest(".wp-hd") ? root.querySelector(".wp-i[data-id]") : null;
+    if (row) act(row, "open");
+    return;
+  }
   const a = t.dataset.act;
   if (a === "fold") { fold = true; draw(); return; }
   if (a === "close") { post({ t: "close" }); return; }

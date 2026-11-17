@@ -5,6 +5,10 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-17 · Waiting on you: click the top to open Tether
+- A click on the panel's top line brings Tether forward on the first chat that's waiting. A click on a chat's name line opens that chat.
+- The fold button is a minimize line now, not an up arrow.
+
 ## 2026-11-17 · Split animations show, and resizing panes is faster
 - With long chats, the split animations were mostly over before the first frame was drawn. They now start once that frame is on screen.
 - Dragging the line between panes does one layout per frame, about three times faster with long chats.
