@@ -378,9 +378,12 @@ class Session:
             self.model = model
         if effort is not None:
             self.effort = effort
-        if self.alive and self.running_jobs():
+        why = self.busy_why() if self.alive else ""
+        if why:  # restarting now would cut off the reply, the question or the background work: switch at the next message instead
             self._restart_pending = True
-            self.emit({"type": "notice", "sid": self.sid, "text": "The switch waits until the background job ends, so it isn't stopped."})
+            self.emit({"type": "notice", "sid": self.sid, "text":
+                       "The switch applies from your next message, so this reply isn't cut off." if why in ("replying", "needs your answer")
+                       else "The switch waits until the background work ends, so it isn't stopped."})
             self._set(self.status)
         elif self.alive:
             self.close()
@@ -393,7 +396,7 @@ class Session:
 
     def send(self, text: str, images: list[dict] | None = None) -> None:
         self._refused = False
-        if self._restart_pending and not self.running_jobs():  # a model or effort switch that waited for a job
+        if self._restart_pending and not self.busy_why():  # a model or effort switch that waited for a reply or a job
             self._restart_pending = False
             self.close()
         content: list | str = text

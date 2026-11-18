@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-18 · Switching models no longer cuts off a reply
+- Changing the model or effort while Claude is replying used to stop the reply. The switch now waits and applies from your next message; the chat says so.
+
 ## 2026-11-18 · Instructions for one chat
 - A new page button in the message box opens a card where you write instructions for this chat only, such as "Review only, don't change files". Set them before the first message or change them any time; a dot on the button shows the chat has them.
 - The chat keeps a line for each change, with View to open them again. Changes apply from your next message.
