@@ -5,6 +5,11 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-18 · Instructions for one chat
+- A new page button in the message box opens a card where you write instructions for this chat only, such as "Review only, don't change files". Set them before the first message or change them any time; a dot on the button shows the chat has them.
+- The chat keeps a line for each change, with View to open them again. Changes apply from your next message.
+- A fresh start carries the chat's instructions over word for word.
+
 ## 2026-11-18 · Panes redraw after a resize
 - A chat that isn't working could show a blank area, with its text sitting too high, after its pane or the window changed size. Tether now draws the pane again once the size settles, and you stay at the same place in the chat.
 

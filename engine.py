@@ -58,6 +58,10 @@ Two things Tether does with what you write:
   on each option's outer element. Tether adds a Pick button to each and sends the user's choice as their reply."""
 
 
+INSTRUCT_HEAD = ("\n\n# Instructions for this chat\nThe user set these instructions for this chat in Tether. Follow them for the "
+                 "whole chat. A later message marked [Tether chat instructions] replaces them.\n\n")
+
+
 def artifact_info(inp: dict, cwd: str) -> dict:
     """show_artifact's file as an absolute path, its title and the note for this version."""
     p = Path(str(inp.get("path") or "")).expanduser()
@@ -233,6 +237,11 @@ class Session:
         self.fork_from = fork_from  # Run separately: start as a copy of this chat under our own id
         self.extra_settings: dict = {}  # merged into --settings (a side question's hook that turns tools off)
         self.no_persist = False  # a throwaway copy: Claude Code doesn't save it, so it never shows in the list
+        # This chat's own instructions, as they stood when this session began. They go in the system prompt and stay
+        # the same for the session's whole life (changing them would make the next reply re-read the chat at full
+        # price); a later change rides along with a message instead (Api.send in workbench.py).
+        self.instructions = ""
+        self.said = resume  # Claude has had a message in this session
         self.model = settings.get("model", "")
         self.effort = settings.get("effort", "")
         self.perm_mode = settings.get("perm_mode", "")   # "" = your Claude Code default
@@ -277,7 +286,8 @@ class Session:
         cmd = [binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                "--include-partial-messages", "--replay-user-messages", "--permission-prompts", "host", "--permission-prompt-tool", "stdio",
                "--mcp-config", json.dumps(mcp), "--settings", json.dumps({**({"fastMode": True} if self.fast and not self.settings.get("fast_unavailable") else {}), **self.extra_settings}),
-               "--append-system-prompt", APP_PROMPT + ("\n" + gateway.IGNORE_TOOLS if gateway.is_other(self.model) else "")]
+               "--append-system-prompt", APP_PROMPT + ("\n" + gateway.IGNORE_TOOLS if gateway.is_other(self.model) else "")
+               + (INSTRUCT_HEAD + self.instructions if self.instructions else "")]
         # Claude Code saves a session only once it gets a message; one that restarted before that (a model switch,
         # a context check) isn't on disk yet, and --resume would fail with "No conversation found"
         saved = self.resume and any((Path.home() / ".claude" / "projects").glob(f"*/{self.sid}.jsonl"))
@@ -394,6 +404,7 @@ class Session:
         if not self.title:
             self.title = (text or "Image").strip().splitlines()[0][:70]
         msg = {"type": "user", "message": {"role": "user", "content": content}}
+        self.said = True
         try:
             if not self.alive:
                 self._start()

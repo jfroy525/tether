@@ -298,7 +298,10 @@ class Api:
                 "modes": m.get("modes") or {},    # {sid: permission mode} picked in that chat
                 "repos": m.get("repos") or {},    # {sid: repo top} picked in the repo menu, when a chat worked in several
                 "view": m.get("view") or {},      # {sid: [{path, title}]} files you moved into the View tab
-                "switches": m.get("switches") or {}}  # {sid: [{ts, text}]} model and effort changes, shown in the chat
+                "switches": m.get("switches") or {},  # {sid: [{ts, text}]} model and effort changes, shown in the chat
+                # {sid: {text, base, sent}}: this chat's own instructions. text = what you last saved; base = what this
+                # session's system prompt holds; sent = what Claude was last given (base, or text along with a message)
+                "instructions": m.get("instructions") or {}}
 
     def set_meta(self, sid, key, value):
         """key: title (text, "" = back to Claude's), pinned (bool), archived (bool), model ([model, effort]), perm_mode (text),
@@ -365,6 +368,7 @@ class Api:
         self._move_pin(new, parent)
         m = self._meta()
         m["titles"].pop(new, None); m["models"].pop(new, None); m["modes"].pop(new, None); m["repos"].pop(new, None)
+        m["instructions"].pop(new, None)
         self.META_FILE.write_text(json.dumps(m, indent=1))
         recall.unlink(new)
         (recall.INDEX_DIR / "carry" / f"{new}.md").unlink(missing_ok=True)
@@ -465,6 +469,7 @@ class Api:
             saved = self._meta()["models"].get(sid)
             if sid in self._meta()["modes"]:  # the mode you picked in this chat, not the default for new ones
                 s.perm_mode = self._meta()["modes"][sid]
+            s.instructions = (self._meta()["instructions"].get(sid) or {}).get("base", "")
             if saved:
                 s.model, s.effort = saved[0], saved[1]
             else:  # opened before Tether kept per-chat models: the model of its last reply, your default effort
@@ -476,7 +481,7 @@ class Api:
         return {"sid": sid, "cwd": s.cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode, "fast": s.fast,
                 "items": self._items(sid), "parts": recall.lineage(sid)[1:], "context": s.context_tokens,
                 "ctx_usage": s.ctx_usage or (None if pending else self._estimate(sid)), "pending_fresh": pending,
-                "jobs": list(s.jobs.values())}
+                "jobs": list(s.jobs.values()), "instructions": (self._meta()["instructions"].get(sid) or {}).get("text", "")}
 
     def job_output(self, sid, task_id, path="", max_bytes=60_000):
         """The newest part of a background job's output file, which Claude Code fills as the job runs (no tokens)."""
@@ -505,7 +510,8 @@ class Api:
             return {"error": f"No folder at {cwd}"}
         s = engine.Session(self._emit, cwd, self.settings)
         self._sessions[s.sid] = s
-        return {"sid": s.sid, "cwd": cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode, "fast": s.fast, "items": []}
+        return {"sid": s.sid, "cwd": cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode, "fast": s.fast, "items": [],
+                "instructions": ""}
 
     SIDE_NOTE = ("[Tether side task] This chat is a copy, made so the message below can run alongside the original. "
                  "The original chat is still working on its own task in the same folder: don't continue or redo that task, "
@@ -520,21 +526,28 @@ class Api:
             return {"error": "This chat isn't saved yet. Try again in a moment."}
         s = engine.Session(self._emit, p.cwd, self.settings, fork_from=sid)
         s.model, s.effort, s.perm_mode, s.fast = p.model, p.effort, p.perm_mode, p.fast
+        s.instructions = p.instructions  # the same system prompt, so the copy reads the chat from the prompt cache
         s.title = (text or "Side task").strip().splitlines()[0][:70]
         self._sessions[s.sid] = s
+        ins = self._meta()["instructions"].get(sid)
+        if ins:
+            self._instruct_save(s.sid, dict(ins))
         self.set_meta(s.sid, "title", s.title)  # its first message is the original's, so the list would show that name
         if s.model:
             self.set_meta(s.sid, "model", [s.model, s.effort])
         if s.perm_mode:
             self.set_meta(s.sid, "perm_mode", s.perm_mode)
         items = self._items(sid)  # what the copy starts from
+        note, given = self._instruct_note(s.sid)
         try:
-            s.send(self.SIDE_NOTE + text, images or [])
+            s.send(note + self.SIDE_NOTE + text, images or [])
         except (OSError, RuntimeError) as exc:
             self._sessions.pop(s.sid, None)
             return {"error": str(exc)}
+        given()
         return {"sid": s.sid, "cwd": s.cwd, "status": s.status, "model": s.model, "effort": s.effort, "perm_mode": s.perm_mode,
-                "fast": s.fast, "title": s.title, "items": items, "parts": recall.lineage(sid)[1:]}
+                "fast": s.fast, "title": s.title, "items": items, "parts": recall.lineage(sid)[1:],
+                "instructions": (ins or {}).get("text", "")}
 
     # ----- side questions (/btw, ⌘/) -----
     # Claude Code's /btw only works in its terminal, so Tether makes its own: a throwaway copy of the chat that isn't
@@ -569,6 +582,7 @@ class Api:
             cur = {"qid": qid, "size": size, "run": (p.model, p.effort, p.fast), "got": False, "t0": time.time()}
             s = engine.Session(lambda ev, c=cur: self._side_event(sid, c, ev), p.cwd, self.settings, fork_from=sid)
             s.model, s.effort, s.perm_mode, s.fast = p.model, p.effort, p.perm_mode, p.fast
+            s.instructions = p.instructions  # same system prompt as the chat, or the copy pays for all of it again
             s.title = "Side question"
             s.extra_settings, s.no_persist = self.SIDEQ_HOOK, True
             cur["s"] = s
@@ -782,14 +796,84 @@ class Api:
             self._bg(self._markup, [])
         self._handed.pop(sid, None)  # you kept going here, so this part may hand over again later
         carry = recall.INDEX_DIR / "carry" / f"{sid}.md"
+        if not s.title:  # before anything is put in front of it
+            s.title = (text or "Image").strip().splitlines()[0][:70]
+        given = lambda: None
         if carry.exists():  # a fresh start: what it carries over rides along with the first message, no extra turn
             text = carry.read_text() + "\n\n[Your message]\n" + text
+        else:
+            note, given = self._instruct_note(sid)
+            text = note + text
         try:
             s.send(text, images or [])
         except (OSError, RuntimeError) as exc:
             return {"error": str(exc)}
         carry.unlink(missing_ok=True)
+        given()
         return {"ok": True}
+
+    # ----- instructions for one chat -----
+    # A new chat gets them in its system prompt. Changing a system prompt mid-chat makes the next reply re-read the
+    # whole chat at full price, so a later change goes to Claude along with your next message instead, and moves into
+    # the system prompt at the next fresh start.
+    INSTRUCT_MAX = 6000
+    INSTRUCT_MARK = "[Tether chat instructions]"
+
+    def _instruct_save(self, sid: str, entry: dict | None) -> None:
+        m = self._meta()
+        if entry and (entry.get("text") or entry.get("base") or entry.get("sent")):
+            m["instructions"][sid] = {k: str(entry.get(k) or "") for k in ("text", "base", "sent")}
+        else:
+            m["instructions"].pop(sid, None)
+        SUPPORT.mkdir(parents=True, exist_ok=True)
+        self.META_FILE.write_text(json.dumps(m, indent=1))
+
+    def _instruct_note(self, sid: str):
+        """What to put in front of the next message when this chat's instructions changed since Claude last got them,
+        and a function to call once that message has gone in."""
+        e = self._meta()["instructions"].get(sid)
+        if not e or e.get("text", "") == e.get("sent", ""):
+            return "", lambda: None
+        text = e.get("text", "")
+        if text:
+            note = (f"{self.INSTRUCT_MARK} The user changed the instructions for this chat. These replace any earlier chat "
+                    f"instructions and apply from now on:\n\n{text}\n\n[Your message]\n")
+        else:
+            note = (f"{self.INSTRUCT_MARK} The user removed this chat's instructions. The earlier chat instructions no longer "
+                    "apply.\n\n[Your message]\n")
+
+        def given():
+            cur = self._meta()["instructions"].get(sid) or {}
+            self._instruct_save(sid, {**cur, "sent": text})
+        return note, given
+
+    def set_instructions(self, sid, text, line="", replace=False):
+        """This chat's own instructions ("" clears them). line: what the chat shows for the change."""
+        text = str(text or "").strip()[:self.INSTRUCT_MAX]
+        s = self._sessions.get(sid)
+        cur = self._meta()["instructions"].get(sid) or {}
+        said = s.said if s else bool(history.find_file(sid))
+        if not said:  # nothing sent yet: they start out in the system prompt
+            self._instruct_save(sid, {"text": text, "base": text, "sent": text})
+            if s and s.instructions != text:
+                s.instructions = text
+                if s.alive:  # started early (a context check): start again with them
+                    self._bg(s.restart)
+        else:
+            self._instruct_save(sid, {"text": text, "base": cur.get("base", ""), "sent": cur.get("sent", cur.get("base", ""))})
+        if line:
+            self._switch_line(sid, line, replace)
+        return {"ok": True, "text": text, "now": not said}
+
+    def _switch_line(self, sid, line, replace=False):
+        """A line the chat keeps for a change you made (model, effort, instructions), still there after reopening."""
+        m = self._meta()
+        lst = m["switches"].setdefault(sid, [])
+        if replace and lst:  # several changes in a row: one line, updated
+            lst.pop()
+        lst.append({"ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z", "text": line})
+        m["switches"][sid] = lst[-100:]
+        self.META_FILE.write_text(json.dumps(m, indent=1))
 
     def interrupt(self, sid):
         s = self._sessions.get(sid)
@@ -807,13 +891,7 @@ class Api:
             self._bg(s.restart, model, effort)
         self.set_meta(sid, "model", [model, effort])  # this chat only; new chats use Settings › Sessions
         if line:  # the "Switched to …" line, kept so it's still in the chat after reopening
-            m = self._meta()
-            lst = m["switches"].setdefault(sid, [])
-            if replace and lst:  # several clicks in a row: one line, updated
-                lst.pop()
-            lst.append({"ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z", "text": line})
-            m["switches"][sid] = lst[-100:]
-            self.META_FILE.write_text(json.dumps(m, indent=1))
+            self._switch_line(sid, line, replace)
 
     def _items(self, sid, n=600):
         return history.transcript(sid, n, self._meta()["switches"].get(sid))
@@ -1154,6 +1232,11 @@ class Api:
             n.model, n.effort, n.perm_mode, n.fast = old.model, old.effort, old.perm_mode, old.fast
             self.set_meta(new, "model", [n.model, n.effort]); self.set_meta(new, "perm_mode", n.perm_mode)
             r.update(model=n.model, effort=n.effort, perm_mode=n.perm_mode)
+        ins = (self._meta()["instructions"].get(sid) or {}).get("text", "")
+        if ins:  # the chat's instructions carry over word for word, now in the new part's system prompt
+            self._sessions[new].instructions = ins
+            self._instruct_save(new, {"text": ins, "base": ins, "sent": ins})
+        r["instructions"] = ins
         self.set_meta(new, "title", title)
         meta = self._meta()
         self._move_pin(sid, new)  # the new part takes the old one's place

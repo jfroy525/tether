@@ -129,7 +129,8 @@ function markPlace(S) {  // remember the block at the top of the view, for a lat
 function makeSession(info) {
   const S = { sid: info.sid, cwd: info.cwd, title: info.title || "", status: info.status || "saved", model: info.model || "", permMode: info.perm_mode || "", fast: !!info.fast, modes: {},
     effort: info.effort || "", context: info.context || info.ctx_usage?.totalTokens || 0, ctxUsage: info.ctx_usage?.totalTokens ? info.ctx_usage : null, commands: [], draft: "", attachments: [], tools: new Map(),
-    perms: new Map(), jobs: new Map(), cur: null, think: null, stick: true, started: 0, lastActive: Date.now() / 1000 };
+    perms: new Map(), jobs: new Map(), cur: null, think: null, stick: true, started: 0, lastActive: Date.now() / 1000,
+    ins: { text: info.instructions || "", draft: null, open: false } };  // this chat's own instructions (instruct.js)
   S.el = el("div", "chat");
   S.inner = el("div", "chat-inner");
   S.el.appendChild(S.inner);
@@ -236,6 +237,10 @@ function addUser(S, text, images, queued) {
     add(S, freshCard(S, { carried, from: (carried.match(/\((\w{8})\)/) || [])[1] }));
     if (!mine) return;
     text = mine;
+  }
+  if (/^\[Tether chat instructions\]/.test(text || "")) {  // changed instructions rode along with this message; the chat has its own line for that
+    const at = text.indexOf("\n\n[Your message]\n");
+    text = at < 0 ? "" : text.slice(at + 17);
   }
   if (/^\[Tether side task\]/.test(text || "")) {
     text = text.replace(/^\[Tether side task\][^\n]*\n\n/, "");
@@ -2363,6 +2368,7 @@ function activate(sid, keep) {  // keep: a click inside another pane of a split;
   syncDock();
   syncJobsNote();
   SideQ.show(S);
+  Instruct.show(S);
   if (!S) return;
   S.unseen = false;
   if (S.ask) S.ask.seen = true;  // a question you've looked at leaves Waiting on you; its buttons stay in the chat
@@ -2459,7 +2465,17 @@ function runLabel(model, effort) {
   const o = [...$("#model-sel").options].find(x => x.value === model);
   return `${(o ? modelFull(o) : model) || "Default model"} · ${EFFORT_FULL[effort || ""] || effort} effort`;
 }
-const switchLine = text => el("div", "note switch", esc(text));
+function switchLine(text) {
+  const n = el("div", "note switch", esc(text));
+  if (/^Instructions (set|changed|cleared)$/.test(text)) {  // a change to this chat's instructions; View opens them
+    n.classList.add("ins-line");
+    if (text !== "Instructions cleared") {
+      n.insertAdjacentHTML("beforeend", ` · <button class="lnk-btn">View</button>`);
+      n.lastElementChild.onclick = () => { const S = [...state.open.values()].find(x => x.inner.contains(n)); if (S) Instruct.open(S); };
+    }
+  }
+  return n;
+}
 function syncRun() {
   const model = modelFull($("#model-sel").selectedOptions[0]) || "Default model";
   const eff = $("#effort-sel").value, mode = $("#mode-sel").value;
@@ -4132,6 +4148,7 @@ function wire() {
   $("#mic-btn").onclick = () => api().mic(!state.dictating);
   $("#file-btn").onclick = attachFiles;
   $("#sq-btn").onclick = () => { const S = state.open.get(state.active); if (S) SideQ.toggle(S); };
+  $("#ins-btn").onclick = () => Instruct.toggle(state.open.get(state.active));
   $("#model-sel").onchange = $("#effort-sel").onchange = () => {
     const S = state.open.get(state.active);
     if (!S) return;

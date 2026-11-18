@@ -1064,7 +1064,7 @@ body.mini #bar { height: 40px; padding: 0 8px 0 76px; }  /* room for the traffic
 body.mini #bar-right, body.mini #view-seg, body.mini #panel-btn { display: none; }
 body.mini .chat-inner { padding-left: 14px; padding-right: 14px; }
 body.mini #composer { padding: 0 10px 10px; }
-body.mini #tools-wrap, body.mini #fast-btn, body.mini #tool-favs { display: none; }
+body.mini #tools-wrap, body.mini #fast-btn, body.mini #tool-favs, body.mini #ins-btn, body.mini #ins-wrap { display: none; }
 #mini-pin.off { color: var(--text-3); opacity: .6; }
 /* shifted with left, not a negative margin: the margin came off the title's width and cut short names */
 .mini-title { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; border: 0; background: transparent; color: inherit; font: inherit;
@@ -1266,8 +1266,8 @@ body.dark .sq-pop { box-shadow: 0 -12px 30px -14px rgba(0, 0, 0, .6); }
 .sq-fil { position: absolute; z-index: 1; bottom: 0; width: 14px; height: 14px; pointer-events: none; }  /* above the popout, so its side edges end where the curve starts */
 .sq-fil.l { left: -13px; background: radial-gradient(circle at 0 0, transparent 12.5px, var(--pane-line) 13px, var(--pane-line) 13.5px, var(--pop-solid) 14px); }
 .sq-fil.r { right: -13px; background: radial-gradient(circle at 100% 0, transparent 12.5px, var(--pane-line) 13px, var(--pane-line) 13.5px, var(--pop-solid) 14px); }
-#composer.sq-on .composer-box { background: var(--pop-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
-#composer.sq-on .composer-box:focus-within { border-color: var(--pane-line); box-shadow: var(--shadow-pane); }  /* no focus ring line across the join */
+#composer.sq-on .composer-box, #composer.ins-on .composer-box { background: var(--pop-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+#composer.sq-on .composer-box:focus-within, #composer.ins-on .composer-box:focus-within { border-color: var(--pane-line); box-shadow: var(--shadow-pane); }  /* no focus ring line across the join */
 .sq-pc { position: absolute; right: 0; bottom: 0; display: flex; flex-direction: column; opacity: 0; transform: translateY(8px); filter: blur(5px); pointer-events: none;
   transition: opacity .16s, transform .16s, filter .16s; }
 .sq-pop.is-open .sq-pc { opacity: 1; transform: none; filter: none; pointer-events: auto; transition: opacity .36s .11s cubic-bezier(.2, .7, .3, 1), transform .36s .11s cubic-bezier(.2, .7, .3, 1), filter .36s .11s; }
@@ -1535,3 +1535,16 @@ body.desk-full #app { grid-template-columns: minmax(0, 1fr); }
 body.desk-full #panel { width: auto !important; margin: 8px; }
 body.desk-full #panel-grip { display: none; }
 body.desk-full .panel-head { padding-left: 86px; }
+
+/* Instructions for one chat (instruct.js): the side question's popout shape, on the left of the message box */
+#ins-wrap { position: relative; height: 0; pointer-events: none !important; z-index: 5; }
+.ins-w { right: auto; left: 36px; }
+.ins-w .sq-pc { right: auto; left: 0; }
+.ins-field { margin-top: 6px; }
+.ins-field textarea { min-height: 66px; max-height: 220px; }
+.ins-ft { display: flex; align-items: center; gap: 6px; padding: 9px 10px 11px; }
+.ins-ft .spacer { flex: 1; }
+.ins-ft [hidden] { display: none; }
+#ins-btn.has::after { content: ""; position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.note.ins-line .lnk-btn { margin-left: 0; color: var(--text-2); font-size: inherit; }
+.note.ins-line .lnk-btn:hover { color: var(--text); }

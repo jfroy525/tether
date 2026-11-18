@@ -658,7 +658,7 @@ def recent_talk(sid: str, limit: int = 40_000) -> str:
         rows = []
         if e["type"] == "user":
             t = c if isinstance(c, str) else "\n".join(b.get("text", "") for b in c or [] if isinstance(b, dict) and b.get("type") == "text")
-            if t.startswith(("[Tether handoff]", "[Anvil handoff]")):
+            if t.startswith(("[Tether handoff]", "[Anvil handoff]", "[Tether chat instructions]")):
                 t = t.split("\n\n[Your message]\n", 1)[1] if "\n\n[Your message]\n" in t else ""
             if t.strip():
                 rows.append(f"Me ({(e.get('timestamp') or '')[:16]}): {t.strip()}")
