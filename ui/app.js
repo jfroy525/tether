@@ -159,6 +159,7 @@ function makeSession(info) {
       S.boxW = c.clientWidth; S.boxH = c.clientHeight;
       S.settle = performance.now() + 500;  // the message box and the text may still be settling to the new size
       keep();
+      clearTimeout(S.paintT); S.paintT = setTimeout(() => redrawPane(S), 180);
     }).observe(S.el);
     new ResizeObserver(() => { if (!S.el.hidden && performance.now() < (S.settle || 0)) keep(); }).observe(S.inner);
   }
@@ -166,6 +167,20 @@ function makeSession(info) {
   $("#chats").appendChild(S.el);
   state.open.set(S.sid, S);
   return S;
+}
+
+// An idle chat whose pane changed size can keep showing its old picture in the Mac window: the text sits where it
+// was in the smaller pane and the new room stays blank until something scrolls. Once the size has settled, the pane
+// is taken out and put back, which makes WebKit draw it again; you stay where you were. A chat that is working
+// redraws by itself (and taking it out would restart its animations), so it is left alone.
+function redrawPane(S, tries = 0) {
+  const c = S.el;
+  if (c.hidden || !c.isConnected || ["running", "starting"].includes(S.status)) return;
+  if (c.getAnimations().length || window.Extras?.split?.moving?.()) { if (tries < 8) S.paintT = setTimeout(() => redrawPane(S, tries + 1), 200); return; }
+  const top = c.scrollTop;
+  S.settle = Math.max(S.settle || 0, performance.now() + 300);  // the scroll this causes is ours, not you leaving the newest messages
+  c.style.display = "none"; void c.offsetHeight; c.style.display = "";
+  c.scrollTop = S.stick ? c.scrollHeight : top; S.setTop = c.scrollTop;
 }
 
 // Long chats: only the newest part is laid out and drawn. Older blocks stay in the page, folded away, and come back

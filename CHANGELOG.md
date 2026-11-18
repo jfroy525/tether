@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-18 · Panes redraw after a resize
+- A chat that isn't working could show a blank area, with its text sitting too high, after its pane or the window changed size. Tether now draws the pane again once the size settles, and you stay at the same place in the chat.
+
 ## 2026-11-17 · Copy button in the file preview
 - The preview that pops out beside a file path has a Copy button. It puts the file's text on the clipboard, in Page or Code view; on a file longer than 3,000 lines it copies the first 3,000 and says so.
 
