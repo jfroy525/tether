@@ -1,5 +1,9 @@
-"""Tether updates itself from GitHub. A fetch every few hours says whether main has moved on; one click
-fast-forwards this folder, installs new packages if requirements.txt changed, and restarts the app."""
+"""Tether updates itself from GitHub. A fetch every hour says whether the branch it follows has moved on; one click
+fast-forwards this folder, installs new packages if requirements.txt changed, and restarts the app.
+
+Tether lives in R1's GitHub (r1-development/tether) and installed copies follow its develop branch. A copy that was
+installed from the first, personal repo switches itself over the first time it can reach the R1 one; until then it
+keeps following the old repo's main, so nobody is left without updates."""
 from __future__ import annotations
 
 import os
@@ -15,20 +19,69 @@ import repos
 HERE = Path(__file__).resolve().parent
 EVERY = 3600  # GitHub is asked at most this often, unless you check by hand
 _last: dict = {"at": 0.0, "res": None}
+HOME_URL = "https://github.com/r1-development/tether.git"  # where Tether lives
+HOME_BRANCH = "develop"                                    # the branch installed copies follow there
+OLD_REPO = "jfroy525/tether"                               # the first, personal repo: copies cloned from it move over
+MOVE_NOTE = ("Tether moved to R1's GitHub. To keep getting updates, sign in to GitHub with your R1 account "
+             "(in Terminal: gh auth login, then gh auth setup-git).")
 
 
 def _git(*args: str, timeout: float = 30) -> tuple[int, str]:
     return repos._run(["git", *args], str(HERE), timeout)
 
 
-def _fetch() -> str:
-    """Ask GitHub for main; '' when it worked, else git's first error line (a proxy, no git tools, no network)."""
-    env = {"PATH": f"{Path(repos.GIT).parent}:{repos.ENV_PATH}" if "/" in repos.GIT else repos.ENV_PATH,
-           "HOME": str(Path.home()), "GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": "ssh -oBatchMode=yes",
-           **{k: v for k, v in os.environ.items() if k.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy")}}
+def _net_env() -> dict:
+    """What git needs to reach GitHub without ever stopping to ask for a password."""
+    return {"PATH": f"{Path(repos.GIT).parent}:{repos.ENV_PATH}" if "/" in repos.GIT else repos.ENV_PATH,
+            "HOME": str(Path.home()), "GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": "ssh -oBatchMode=yes",
+            **{k: v for k, v in os.environ.items() if k.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy")}}
+
+
+def _origin() -> str:
+    return _git("remote", "get-url", "origin", timeout=10)[1].strip()
+
+
+def _slug(url: str) -> str:
+    """'https://github.com/Owner/Repo.git' or 'git@github.com:Owner/Repo' -> 'owner/repo'."""
+    u = url.strip().lower().removesuffix("/").removesuffix(".git")
+    return "/".join(u.replace(":", "/").split("/")[-2:])
+
+
+def _at_home() -> bool:
+    return _slug(_origin()) == _slug(HOME_URL)
+
+
+def branch() -> str:
+    """The branch this copy follows: develop once it points at the R1 repo, else main as before."""
+    return HOME_BRANCH if _at_home() else "main"
+
+
+def _ref() -> str:
+    return f"origin/{branch()}"
+
+
+def _move() -> str:
+    """A copy cloned from the personal repo: point it at the R1 repo if this Mac can read it. '' when there was
+    nothing to do or it moved; MOVE_NOTE when the R1 repo can't be reached yet (the copy stays where it is)."""
+    if _slug(_origin()) != OLD_REPO:
+        return ""
     try:
-        p = subprocess.run([repos.GIT, "fetch", "--quiet", "origin", "main"], cwd=HERE, env=env,
-                           capture_output=True, text=True, timeout=45)
+        p = subprocess.run([repos.GIT, "ls-remote", "--exit-code", "--heads", HOME_URL, HOME_BRANCH], cwd=HERE,
+                           env=_net_env(), capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return MOVE_NOTE
+    if p.returncode != 0 or not p.stdout.strip():
+        return MOVE_NOTE
+    return "" if _git("remote", "set-url", "origin", HOME_URL, timeout=10)[0] == 0 else MOVE_NOTE
+
+
+def _fetch() -> str:
+    """Ask GitHub for the followed branch; '' when it worked, else git's first error line (a proxy, no git tools,
+    no network)."""
+    b = branch()
+    try:
+        p = subprocess.run([repos.GIT, "fetch", "--quiet", "origin", f"+refs/heads/{b}:refs/remotes/origin/{b}"],
+                           cwd=HERE, env=_net_env(), capture_output=True, text=True, timeout=45)
     except FileNotFoundError:
         return "git isn't installed"
     except subprocess.TimeoutExpired:
@@ -70,7 +123,7 @@ def change_log() -> list[dict]:
 
 def _pending_log() -> list[dict]:
     """Entries in GitHub's change log that this copy doesn't have yet: what the update brings."""
-    code, text = _git("show", "origin/main:CHANGELOG.md")
+    code, text = _git("show", f"{_ref()}:CHANGELOG.md")
     if code:
         return []
     have = {e["key"] for e in change_log()}
@@ -78,36 +131,39 @@ def _pending_log() -> list[dict]:
 
 
 def pushed() -> bool:
-    """Whether Tether's own files here match what was last pushed to GitHub's main: nothing changed, nothing new and
-    no commit waiting to go up. Doesn't ask GitHub (a push updates origin/main here). A copy without git counts as pushed."""
+    """Whether Tether's own files here match what was last pushed to the followed branch on GitHub: nothing changed,
+    nothing new and no commit waiting to go up. Doesn't ask GitHub (a push updates the origin/ branch here). A copy without git counts as pushed."""
     if not (HERE / ".git").exists():
         return True
     code, out = _git("status", "--porcelain", "--untracked-files=all", "--", "*.py", "ui/*.js", "ui/*.css", "ui/*.html", "markup.html", timeout=10)
     if code != 0 or out.strip():
         return False
-    code, ahead = _git("rev-list", "--count", "origin/main..HEAD", timeout=10)
+    code, ahead = _git("rev-list", "--count", f"{_ref()}..HEAD", timeout=10)
     return code == 0 and (ahead.strip() or "0") == "0"
 
 
 def status(force: bool = False) -> dict:
-    """{behind, ahead, dirty, changes}: commits on GitHub's main not here yet, and whether this copy can take them."""
+    """{behind, ahead, dirty, changes}: commits on GitHub not here yet, and whether this copy can take them.
+    'move' is set while a copy from the personal repo can't reach the R1 one yet."""
     if not (HERE / ".git").exists():
         return {"ok": False, "why": "This copy wasn't installed with git clone, so it can't update itself.", "current": ""}
     if not force and _last["res"] and time.time() - _last["at"] < EVERY:
         return _last["res"]
+    move = _move()
     err = _fetch()
     if err:
-        res = {"ok": False, "why": f"Couldn't reach GitHub: {err}", "current": current(), "checked": time.time()}
+        res = {"ok": False, "why": f"Couldn't reach GitHub: {err}", "current": current(), "checked": time.time(), "move": move}
         if not _last["res"] or not _last["res"].get("ok"):
             _last.update(at=time.time(), res=res)
         return res
     n = lambda rng: int((_git("rev-list", "--count", rng)[1].strip() or "0"))  # noqa: E731
-    behind, ahead = n("HEAD..origin/main"), n("origin/main..HEAD")
+    ref = _ref()
+    behind, ahead = n(f"HEAD..{ref}"), n(f"{ref}..HEAD")
     dirty = bool(_git("status", "--porcelain", "--untracked-files=no")[1].strip())
-    log = _git("log", "--format=%s", "HEAD..origin/main")[1].splitlines() if behind else []
+    log = _git("log", "--format=%s", f"HEAD..{ref}")[1].splitlines() if behind else []
     res = {"ok": True, "behind": behind, "ahead": ahead, "dirty": dirty, "changes": log[:12], "more": max(0, len(log) - 12),
            "notes": _pending_log() if behind else [],
-           "current": current(), "checked": time.time()}
+           "current": current(), "checked": time.time(), "move": move}
     _last.update(at=time.time(), res=res)
     return res
 
@@ -132,7 +188,7 @@ def _packages() -> bool:
 
 
 def apply() -> dict:
-    """Move this folder to GitHub's main, which is the source of truth. Edits or commits made on this Mac are
+    """Move this folder to the followed branch on GitHub, which is the source of truth. Edits or commits made on this Mac are
     set aside first (a git stash and a tether-local-<time> branch), so nothing is lost; if a step fails, it goes back."""
     s = status(force=True)
     if not s.get("ok"):
@@ -148,13 +204,14 @@ def apply() -> dict:
         if _git("stash", "push", "--quiet", "-m", f"Tether: set aside before update {stamp}")[0]:
             return {"error": "Couldn't set aside the changes made on this Mac. Nothing was changed."}
         stashed = True
-    files = _git("diff", "--name-only", old, "origin/main")[1].split()
+    ref = _ref()
+    files = _git("diff", "--name-only", old, ref)[1].split()
 
     def back() -> None:
         _git("reset", "--hard", "--quiet", old)
         if stashed:
             _git("stash", "pop", "--quiet")
-    if _git("reset", "--hard", "--quiet", "origin/main")[0]:
+    if _git("reset", "--hard", "--quiet", ref)[0]:
         back()
         return {"error": "Couldn't apply the update. Nothing was changed."}
     if "requirements.txt" in files and not _packages():

@@ -2,7 +2,7 @@
 
 A Mac app for Claude Code. Each chat runs your own `claude` CLI, so your login, CLAUDE.md, skills, MCP servers and permission mode all apply, and sessions stay compatible with the terminal and VS Code. Tether adds what the terminal can't: voice input, circling things on screen, clickable file paths, a Shelf for pages Claude makes, approvals docked above the message box, and long chats that keep going with notes instead of compaction.
 
-See [the highlights](https://htmlpreview.github.io/?https://github.com/jfroy525/tether/blob/main/docs/highlights.html) for the main features, or the [one-page tour](https://htmlpreview.github.io/?https://github.com/jfroy525/tether/blob/main/docs/features.html) for everything it does.
+After installing, open `docs/highlights.html` in a browser for the main features, or `docs/features.html` for the one-page tour of everything it does.
 
 ## Install
 
@@ -10,12 +10,13 @@ You need:
 - A Mac with macOS 12 or newer (Apple silicon or Intel)
 - [Claude Code](https://claude.com/claude-code), installed and logged in (run `claude` once in Terminal)
 - Python 3.11 or newer, or [uv](https://docs.astral.sh/uv/)
-- Optional: [GitHub CLI](https://cli.github.com) (`gh`) for pull requests in the Changes tab, VS Code for ⌥-click to open files
+- An R1 GitHub account, signed in on this Mac (`gh auth login`, then `gh auth setup-git`): the repo is internal to R1, so installing and updating both need it
+- Optional: VS Code for ⌥-click to open files
 
 Then:
 
 ```sh
-git clone https://github.com/jfroy525/tether.git
+git clone -b develop https://github.com/r1-development/tether.git
 cd tether
 zsh build_app.sh
 open ~/Applications/Tether.app
@@ -25,9 +26,9 @@ The build makes `~/Applications/Tether.app`, which runs the code in this folder.
 
 The same icon glows when a newer Claude Code is out (checked against npm at most hourly); **Update Claude Code** runs `claude update`, which works for Homebrew, npm and the native installer. Open chats keep the old version until they restart. Settings › Updates shows this copy's version and the last check, or why it can't check (for example "Couldn't reach GitHub: …"), with **Check now**.
 
-**Report a problem:** red error lines in a chat have a **Report** link, and Settings › Advanced has **Report a problem**. Tether fills in a GitHub issue with its version, macOS, Claude Code's version, the chat's model, the error and the end of `~/Library/Logs/Tether.log`, with your user name replaced. You see and edit all of it first; it opens on GitHub, where you click Create. Issues are public, and chat text, files and pictures are never included.
+**Report a problem:** red error lines in a chat have a **Report** link, and Settings › Advanced has **Report a problem**. Tether fills in a GitHub issue with its version, macOS, Claude Code's version, the chat's model, the error and the end of `~/Library/Logs/Tether.log`, with your user name replaced. You see and edit all of it first; it opens on GitHub, where you click Create. Issues can be read by anyone in R1's GitHub, and chat text, files and pictures are never included.
 
-**Updates:** when a newer Tether is on GitHub, a glowing download icon appears next to the settings gear. Hover it for what's in the update; click it to see what changed (the new entries in [CHANGELOG.md](CHANGELOG.md)), then **Update and restart**. Settings › Updates › **Change log** shows every update. If Claude is working in any chat, Tether waits until it's done, and the chats you had open come back after the restart. If you installed before the update icon existed, update once by hand: `cd ~/tether && git pull`, then quit Tether (⌘Q) and reopen it.
+**Updates:** installed copies follow the `develop` branch of `r1-development/tether`; `main` gets the same changes through reviewed pull requests. A copy installed from the earlier personal repo switches itself to the R1 repo the first time this Mac can reach it, and until then Settings › Updates says how to sign in. When a newer Tether is on GitHub, a glowing download icon appears next to the settings gear. Hover it for what's in the update; click it to see what changed (the new entries in [CHANGELOG.md](CHANGELOG.md)), then **Update and restart**. Settings › Updates › **Change log** shows every update. If Claude is working in any chat, Tether waits until it's done, and the chats you had open come back after the restart. If you installed before the update icon existed, update once by hand: `cd ~/tether && git pull`, then quit Tether (⌘Q) and reopen it.
 
 The first time you use each of these, macOS asks for permission (System Settings › Privacy & Security):
 - **Microphone:** dictation. Speech is turned into text on your Mac with Whisper; the speech model (about 150 MB) downloads the first time.

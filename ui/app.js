@@ -4400,6 +4400,7 @@ function renderUpdRow() {  // Settings › Updates: this copy's version and the 
     : !r.ok ? `${ver}<span class="upd-bad">${esc(r.why || "Couldn't check")}</span>`
     : r.behind ? `${ver}<button class="btn ghost small" id="upd-open">Update ready</button>`
     : `${ver}Up to date${at ? ` · checked ${at}` : ""}`;
+  if (r?.move) line.insertAdjacentHTML("beforeend", `<div class="upd-bad upd-move">${esc(r.move)}</div>`);
   $("#upd-open")?.addEventListener("click", updateDialog);
   const cl = $("#cc-line"); if (!cl) return;
   const c = upd.cc;

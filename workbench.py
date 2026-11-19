@@ -1701,7 +1701,7 @@ class Api:
             subprocess.Popen(["open", url])
 
     # ----- report a problem: a GitHub issue the user reads and submits in the browser -----
-    REPORT_REPO = "https://github.com/jfroy525/tether"
+    REPORT_REPO = "https://github.com/r1-development/tether"
 
     def report_info(self, sid="", error=""):
         """Title and body for an issue: versions, the chat's model, the error and the end of Tether.log, with the
