@@ -25,6 +25,11 @@ import urllib.parse
 from pathlib import Path
 
 DAY = 86400
+# A model that worked and then isn't in the gateway's list (the list can come back without a whole provider) is kept
+# and asked directly instead of dropped: it stays in the menu while it answers, and is forgotten only after this long
+# without a place in the list or an answer. Until the list is whole again it is read hourly, not daily.
+MISSING_KEEP = 3 * DAY
+MISSING_RETRY = 3600
 # not chat models, or copies of one under another name
 SKIP = re.compile(r"\d{4}-\d{2}-\d{2}|audio|realtime|transcribe|tts|whisper|dall-?e|sora|image|embed|search|similarity|moderation|"
                   r"^ada|^babbage|^curie|^davinci|35-turbo|instruct|canvas|computer-use|deep-research|model-router|"
@@ -266,29 +271,47 @@ class OtherModels:
                     listed[mid] = r
             for mid in self.data["custom"]:
                 listed.setdefault(mid, {})
+            now = time.time()
             with self.lock:
                 models = self.data["models"]
+                missing = []
                 for gone in [m for m in models if m not in listed]:
-                    models.pop(gone)
+                    m = models[gone]
+                    if m.get("ok") and not m.get("missing_since"):
+                        m["missing_since"] = now
+                    if m.get("missing_since") and (m.get("ok") or now - m["missing_since"] < MISSING_KEEP):
+                        missing.append(gone)  # it worked before the list lost it: ask it directly below
+                    else:
+                        models.pop(gone)
                 for mid, r in listed.items():
                     m = models.setdefault(mid, {})
+                    m.pop("missing_since", None)
                     if r.get("pricing"):
                         m["price"] = {k: r["pricing"].get(k) for k in ("prompt", "completion", "input_cache_read", "input_cache_write")}
                     if r.get("context_length"):
                         m["context"] = r["context_length"]
-                todo = [mid for mid, m in models.items() if full or not m.get("checked") or not m.get("ok")]
+                # failed models are asked again once a day; an hourly read after an incomplete list asks only the missing ones
+                again = full or now - (self.data.get("retried_at") or 0) >= DAY - 60
+                todo = [mid for mid, m in models.items() if full or not m.get("checked") or mid in missing or (again and not m.get("ok"))]
             with cf.ThreadPoolExecutor(8) as ex:
                 results = dict(zip(todo, ex.map(lambda x: self._check_one(x, token), todo)))
             with self.lock:
                 for mid, res in results.items():
                     if mid in self.data["models"]:
                         self.data["models"][mid].update(res)
-                self.data["listed_at"] = time.time()
+                # an incomplete list: read it again in an hour instead of tomorrow
+                self.data["listed_at"] = time.time() - (DAY - MISSING_RETRY if missing else 0)
+                if again:
+                    self.data["retried_at"] = time.time()
                 if todo:
                     self.data["checked_at"] = time.time()
                 self._save()
             ok = sum(1 for r in results.values() if r["ok"])
             print(f"[models] {len(listed)} listed, checked {len(todo)}: {ok} answered", flush=True)
+            if missing:
+                kept = sum(1 for mid in missing if self.data["models"].get(mid, {}).get("ok"))
+                print(f"[models] {len(missing)} worked before but aren't in the gateway's list: {kept} still answer and stay; "
+                      f"reading the list again in an hour", flush=True)
         finally:
             self.busy = False
             self.emit({"type": "other_models", **self.listing()})

@@ -5,6 +5,9 @@ update box, and the whole list in Settings › Updates › Change log.
 
 Each update adds one entry at the top: `## YYYY-MM-DD · Title`, then a short line per change.
 
+## 2026-11-19 · Other models survive an incomplete gateway list
+- When the gateway's model list came back without a provider, every model from that provider left the menu for a day. A model that was working and drops out of the list is now asked directly and stays while it answers, and Tether reads the list again in an hour.
+
 ## 2026-11-18 · Switching models no longer cuts off a reply
 - Changing the model or effort while Claude is replying used to stop the reply. The switch now waits and applies from your next message; the chat says so.
 
